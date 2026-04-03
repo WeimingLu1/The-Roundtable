@@ -1,0 +1,7 @@
+{
+  "name": "The Roundtable (圆桌)",
+  "description": "A high-quality intellectual roundtable. Host a debate with world-class experts.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
