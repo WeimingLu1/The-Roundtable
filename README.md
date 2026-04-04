@@ -28,28 +28,35 @@
 - **AI 引擎**: MiniMax API (Anthropic compatible format)
 - **图标库**: Lucide React
 - **动画**: Framer Motion
-- **状态管理**: Zustand
+- **状态管理**: Zustand with persist middleware
+- **持久化**: IndexedDB
 
 ## 📂 项目结构
 
-```text
+```
 ├── src/
 │   ├── App.tsx                 # 主程序逻辑与状态管理
-│   ├── components/             # UI 组件库
-│   │   ├── chat/              # 聊天气泡相关
-│   │   ├── discussion/         # 讨论区组件
-│   │   ├── layout/             # 布局组件
-│   │   ├── onboarding/         # 用户设置
-│   │   ├── participants/       # 专家卡片
-│   │   ├── summary/           # 总结弹窗
-│   │   └── ui/                # 基础 UI 组件
+│   ├── components/
+│   │   ├── chat/              # 聊天气泡相关 (ChatBubble, ChatList, StanceBadge, TypingIndicator)
+│   │   ├── discussion/         # 讨论区组件 (DiscussionHeader, InputArea, SpeedControl)
+│   │   ├── layout/            # 布局组件 (AppShell)
+│   │   ├── onboarding/       # 用户设置 (OnboardingForm)
+│   │   ├── participants/     # 专家卡片 (ParticipantCard, ParticipantAvatar)
+│   │   ├── summary/           # 总结弹窗 (SummaryModal)
+│   │   └── ui/                # 基础 UI 组件 (button, card, dialog, dropdown-menu, select, textarea)
 │   ├── services/
-│   │   ├── minimaxService.ts   # AI 核心逻辑
-│   │   └── promptTemplates.ts  # 提示词模板
-│   └── stores/
-│       └── useAppStore.ts     # Zustand 状态管理
-├── server.js                   # Express 代理服务器
-└── vite.config.ts              # Vite 配置
+│   │   ├── minimaxService.ts   # AI 核心逻辑（API 调用）
+│   │   ├── promptTemplates.ts  # 提示词模板
+│   │   └── exportService.ts    # 导出服务 (Markdown/PDF)
+│   ├── stores/
+│   │   ├── useAppStore.ts     # 主状态管理 (Zustand)
+│   │   └── useSettingsStore.ts # 设置状态 (主题、速度)
+│   ├── hooks/                  # 自定义 Hooks
+│   ├── types.ts               # TypeScript 类型定义
+│   └── styles/                # 全局样式
+├── server.js                   # Express 代理服务器 (端口 3001)
+├── vite.config.ts             # Vite 配置
+└── tsconfig.json              # TypeScript 配置
 ```
 
 ## 🚀 运行逻辑
@@ -66,34 +73,91 @@
 
 ## ⚙️ 环境配置
 
-项目需要 MiniMax API Key 才能运行。
-
-1. 在项目根目录创建 `.env` 文件。
-2. 添加你的 API Key:
-   ```env
-   ANTHROPIC_API_KEY=你的_API_KEY
-   ```
-
-## 📦 安装与启动
+### 1. 安装依赖
 
 ```bash
-# 安装依赖
 npm install
+```
 
-# 启动开发服务器
+### 2. 配置 API Key
+
+在项目根目录创建 `.env` 文件：
+
+```env
+ANTHROPIC_API_KEY=你的_MiniMax_API_Key
+```
+
+> 注意：MiniMax API Key 需要从 [MiniMax Platform](https://platform.minimaxi.com/) 获取。
+
+### 3. 启动开发服务器
+
+```bash
 npm run dev
+```
 
-# 构建生产版本
+这会同时启动：
+- 前端开发服务器 (http://localhost:5173)
+- 后端代理服务器 (http://localhost:3001)
+
+### 4. 构建生产版本
+
+```bash
 npm run build
 ```
 
+构建产物会输出到 `dist/` 目录。
+
 ## 📝 提示词工程 (Prompt Engineering)
 
-本项目在 `src/services/promptTemplates.ts` 中实现了复杂的提示词逻辑，包括：
-- **Anti-Cluster Pivot**: 防止讨论陷入单一逻辑死循环。
-- **Implicit Cue**: 识别主持人的隐含指令。
-- **Intellectual Flexibility**: 鼓励 AI 专家在逻辑被说服时改变立场，而非死板坚持。
-- **PIVOT Strategy**: 随机切换到新话题维度，增加讨论的多样性。
+本项目在 `src/services/promptTemplates.ts` 中实现了复杂的提示词逻辑：
+
+### 核心策略
+
+| 策略 | 描述 |
+|------|------|
+| **Anti-Cluster Pivot** | 防止讨论陷入单一逻辑死循环，当检测到重复时会强制切换话题维度 |
+| **Implicit Cue** | 识别主持人的隐含指令，如 @ 提及时自动让被提及者发言 |
+| **Intellectual Flexibility** | 鼓励 AI 专家在逻辑被说服时改变立场，而非死板坚持 |
+| **PIVOT Strategy** | 随机 25% 概率切换到新话题维度，增加讨论的多样性 |
+
+### 消息格式
+
+AI 响应使用 `||` 分隔的格式：
+```
+STANCE||INTENSITY||MESSAGE||ACTION
+```
+
+例如：
+```
+DISAGREE||4||I strongly reject this premise because...||CONTINUE
+```
+
+### 立场类型
+
+- `AGREE` - 同意
+- `DISAGREE` - 反对
+- `PARTIAL` - 部分同意
+- `PIVOT` - 转向新话题
+- `NEUTRAL` - 中立
+
+## 🐛 已知问题 (Known Issues)
+
+以下问题已在 TODO 列表中，等待修复：
+
+| # | 问题 | 描述 | 状态 |
+|---|------|------|------|
+| 1 | 第三方发言截断 | 第三位专家的开场白有时显示 "..." 占位符 | 待修复 |
+| 2 | Random 按钮无加载提示 | 点击随机生成话题时没有视觉反馈 | 待修复 |
+| 3 | @ 提及自动完成 | 输入 @ 时没有弹出参与者姓名自动完成 | 待修复 |
+| 4 | AI 输出非流式 | AI 响应是一次性显示而非逐字显示 | 待修复 |
+
+## 🎨 截图预览
+
+（截图待添加）
+
+## 📄 License
+
+MIT License
 
 ---
 
