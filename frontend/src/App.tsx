@@ -1,0 +1,130 @@
+import { useEffect } from 'react';
+import { useAppStore } from '@/stores/useAppStore';
+import { useDebate } from '@/hooks/useDebate';
+import { OnboardingForm } from '@/components/onboarding/OnboardingForm';
+import { LandingView } from '@/components/landing/LandingView';
+import { ParticipantList } from '@/components/participants/ParticipantList';
+import { DiscussionView } from '@/components/discussion/DiscussionView';
+import { SummaryView } from '@/components/summary/SummaryView';
+import { fetchPanel } from '@/services/api';
+import { Spinner } from '@/components/ui/spinner';
+
+function PanelReview() {
+  const { topic, participants, setParticipants, setAppState } = useAppStore();
+
+  const handleGenerate = async () => {
+    try {
+      const { participants: newParticipants } = await fetchPanel(topic);
+      setParticipants(newParticipants);
+      setAppState('PANEL_REVIEW');
+    } catch (err) {
+      console.error('Failed to generate panel:', err);
+    }
+  };
+
+  useEffect(() => {
+    handleGenerate();
+  }, []);
+
+  const handleConfirm = () => {
+    setAppState('DEBATING');
+  };
+
+  const handleCancel = () => {
+    setAppState('LANDING');
+  };
+
+  if (participants.length === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
+
+  return (
+    <ParticipantList
+      participants={participants}
+      onUpdate={(id, updates) => useAppStore.getState().updateParticipant(id, updates)}
+      onReplace={async (id) => {
+        try {
+          const { participants: newParticipants } = await fetchPanel(topic);
+          const updated = newParticipants.find((p) => p.id === id) || newParticipants[0];
+          useAppStore.getState().updateParticipant(id, updated);
+        } catch (err) {
+          console.error('Failed to replace participant:', err);
+        }
+      }}
+      onConfirm={handleConfirm}
+      onCancel={handleCancel}
+    />
+  );
+}
+
+function DebateController() {
+  const { participants } = useAppStore();
+  const { startDebate, summarize } = useDebate();
+
+  useEffect(() => {
+    if (participants.length === 3) {
+      startDebate();
+    }
+  }, [participants]);
+
+  return (
+    <>
+      <DiscussionView onSummarize={summarize} />
+    </>
+  );
+}
+
+export default function App() {
+  const { appState, reset, setAppState } = useAppStore();
+
+  const handleNewDebate = () => {
+    reset();
+  };
+
+  switch (appState) {
+    case 'ONBOARDING':
+      return <OnboardingForm />;
+    case 'LANDING':
+      return <LandingView />;
+    case 'GENERATING_PANEL':
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+          <div className="text-center">
+            <Spinner className="h-8 w-8 mx-auto mb-4 text-white" />
+            <p className="text-white text-lg">Summoning guests...</p>
+          </div>
+        </div>
+      );
+    case 'PANEL_REVIEW':
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4">
+          <ParticipantList
+            participants={useAppStore.getState().participants}
+            onUpdate={(id, updates) => useAppStore.getState().updateParticipant(id, updates)}
+            onReplace={async (id) => {
+              try {
+                const topic = useAppStore.getState().topic;
+                const { participants: newParticipants } = await fetchPanel(topic);
+                const updated = newParticipants.find((p) => p.id === id) || newParticipants[0];
+                useAppStore.getState().updateParticipant(id, updated);
+              } catch (err) {
+                console.error('Failed to replace participant:', err);
+              }
+            }}
+            onConfirm={() => setAppState('DEBATING')}
+            onCancel={() => setAppState('LANDING')}
+          />
+        </div>
+      );
+    case 'DEBATING':
+      return <DebateController />;
+    case 'SUMMARY':
+      return <SummaryView onNewDebate={handleNewDebate} />;
+    default:
+      return <OnboardingForm />;
+  }
+}
