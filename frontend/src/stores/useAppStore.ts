@@ -28,6 +28,8 @@ interface AppStore {
   // Messages
   messages: Message[];
   addMessage: (message: Message) => void;
+  updateMessage: (id: string, updates: Partial<Message>) => void;
+  removeMessage: (id: string) => void;
   clearMessages: () => void;
 
   // Debate control
@@ -35,11 +37,15 @@ interface AppStore {
   setIsWaitingForUser: (waiting: boolean) => void;
   isStreaming: boolean;
   setIsStreaming: (streaming: boolean) => void;
+  isSummarizing: boolean;
+  setIsSummarizing: (summarizing: boolean) => void;
   thinkingSpeakerId: string | null;
   setThinkingSpeakerId: (id: string | null) => void;
   autoDebateCount: number;
   incrementAutoDebateCount: () => void;
   resetAutoDebateCount: () => void;
+  mentionedId: string | null;
+  setMentionedId: (id: string | null) => void;
 
   // Config
   config: DebateConfig;
@@ -61,10 +67,12 @@ const initialState = {
   messages: [] as Message[],
   isWaitingForUser: false,
   isStreaming: false,
+  isSummarizing: false,
   thinkingSpeakerId: null as string | null,
   autoDebateCount: 0,
   config: { speed: 'normal' as const, maxTurnsPerRound: 3 },
   summary: null as Summary | null,
+  mentionedId: null as string | null,
 };
 
 export const useAppStore = create<AppStore>((set) => ({
@@ -88,11 +96,25 @@ export const useAppStore = create<AppStore>((set) => ({
   addMessage: (message) =>
     set((state) => ({ messages: [...state.messages, message] })),
 
+  updateMessage: (id, updates) =>
+    set((state) => ({
+      messages: state.messages.map((m) =>
+        m.id === id ? { ...m, ...updates } : m
+      ),
+    })),
+
+  removeMessage: (id) =>
+    set((state) => ({
+      messages: state.messages.filter((m) => m.id !== id),
+    })),
+
   clearMessages: () => set({ messages: [] }),
 
   setIsWaitingForUser: (isWaitingForUser) => set({ isWaitingForUser }),
 
   setIsStreaming: (isStreaming) => set({ isStreaming }),
+
+  setIsSummarizing: (isSummarizing) => set({ isSummarizing }),
 
   setThinkingSpeakerId: (thinkingSpeakerId) => set({ thinkingSpeakerId }),
 
@@ -100,6 +122,8 @@ export const useAppStore = create<AppStore>((set) => ({
     set((state) => ({ autoDebateCount: state.autoDebateCount + 1 })),
 
   resetAutoDebateCount: () => set({ autoDebateCount: 0 }),
+
+  setMentionedId: (mentionedId) => set({ mentionedId }),
 
   setConfig: (config) =>
     set((state) => ({ config: { ...state.config, ...config } })),

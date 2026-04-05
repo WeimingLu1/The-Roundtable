@@ -4,10 +4,17 @@ from anthropic import Anthropic
 from anthropic.types import TextBlock
 from dotenv import load_dotenv
 
-load_dotenv()
+# Load .env file with override to ensure we get the correct values
+load_dotenv(override=True)
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-ANTHROPIC_BASE_URL = os.getenv("ANTHROPIC_BASE_URL", "https://api.minimaxi.com/anthropic/v1")
+# SDK appends /v1/messages to base_url, so strip /v1 from the env URL
+_RAW_BASE_URL = os.getenv("ANTHROPIC_BASE_URL", "https://api.minimaxi.com/anthropic")
+# Remove /v1 suffix if present since SDK adds it
+if _RAW_BASE_URL.endswith("/v1"):
+    ANTHROPIC_BASE_URL = _RAW_BASE_URL[:-3].rstrip("/")
+else:
+    ANTHROPIC_BASE_URL = _RAW_BASE_URL.rstrip("/")
 MODEL = "MiniMax-M2.7"
 
 

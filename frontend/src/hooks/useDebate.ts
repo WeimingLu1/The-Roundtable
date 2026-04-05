@@ -1,14 +1,9 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { useAppStore } from '@/stores/useAppStore';
 import { debateStart, debateTurn, fetchSummary } from '@/services/api';
 
-const getDelay = (speed: 'slow' | 'normal' | 'fast'): number => {
-  switch (speed) {
-    case 'slow': return 4000;
-    case 'fast': return 1000;
-    default: return 2000;
-  }
-};
+// Always use fast speed (1 second delay between turns)
+const DEBATE_DELAY = 1000;
 
 export function useDebate() {
   const {
@@ -16,58 +11,111 @@ export function useDebate() {
     topic,
     participants,
     messages,
-    config,
     isWaitingForUser,
     isStreaming,
+    isSummarizing,
     autoDebateCount,
+    mentionedId,
     setAppState,
     setIsWaitingForUser,
     setIsStreaming,
+    setIsSummarizing,
     setThinkingSpeakerId,
+    setMentionedId,
     addMessage,
+    updateMessage,
+    removeMessage,
     incrementAutoDebateCount,
     resetAutoDebateCount,
     setSummary,
     clearMessages,
   } = useAppStore();
 
-  const startDebate = useCallback(async () => {
-    if (!topic || participants.length === 0) return;
+  // Use refs to avoid dependency changes triggering re-runs
+  const incrementRef = useRef(incrementAutoDebateCount);
+  incrementRef.current = incrementAutoDebateCount;
 
+  // Track if debate start is already in progress
+  const debateInProgressRef = useRef(false);
+
+  const startDebate = useCallback(async () => {
+    // Prevent double-starting
+    if (debateInProgressRef.current) {
+      return;
+    }
+
+    const { topic: currentTopic, participants: currentParticipants } = useAppStore.getState();
+    if (!currentTopic || currentParticipants.length === 0) return;
+
+    debateInProgressRef.current = true;
     clearMessages();
     resetAutoDebateCount();
     setIsStreaming(true);
 
     try {
-      await debateStart(topic, participants, (msg) => {
-        addMessage(msg);
+      await debateStart(currentTopic, currentParticipants, (msg, isFinal) => {
+        const { messages: currentMessages } = useAppStore.getState();
+        if (isFinal) {
+          // Final message - remove preview if exists, then add final
+          const previewId = `preview-${msg.participantId}`;
+          removeMessage(previewId);
+          addMessage(msg);
+        } else {
+          // Partial message - update or add preview
+          const existingMsg = currentMessages.find(m => m.id === msg.id);
+          if (existingMsg) {
+            updateMessage(msg.id, msg);
+          } else {
+            addMessage(msg);
+          }
+        }
       });
+      // After opening statements, increment to signal opening phase is done
+      incrementRef.current();
     } catch (err) {
       console.error('Failed to start debate:', err);
     } finally {
       setIsStreaming(false);
+      debateInProgressRef.current = false;
     }
-  }, [topic, participants, clearMessages, resetAutoDebateCount, setIsStreaming, addMessage]);
+  }, [clearMessages, resetAutoDebateCount, setIsStreaming, addMessage, updateMessage, removeMessage]);
 
   const generateNextTurn = useCallback(async () => {
     if (isStreaming) return;
 
-    const currentSpeaker = participants[autoDebateCount % participants.length];
+    // Use getState to always get fresh values
+    const { autoDebateCount: currentCount, participants: currentParticipants, messages: currentMessages, config: currentConfig, mentionedId: currentMentionedId } = useAppStore.getState();
+
+    // If @mention was used, that person speaks next, then clear it
+    let nextMentionedId: string | undefined = currentMentionedId || undefined;
+    if (currentMentionedId) {
+      setMentionedId(null); // Clear after reading
+    }
+
+    let currentSpeaker;
+    if (nextMentionedId) {
+      const mentioned = currentParticipants.find(p => p.id === nextMentionedId);
+      currentSpeaker = mentioned || currentParticipants[currentCount % currentParticipants.length];
+    } else {
+      currentSpeaker = currentParticipants[currentCount % currentParticipants.length];
+    }
+
     setThinkingSpeakerId(currentSpeaker.id);
     setIsStreaming(true);
 
     try {
       const { message, action } = await debateTurn(
         'debate-1',
-        messages,
-        participants,
-        autoDebateCount,
-        config.maxTurnsPerRound
+        currentMessages,
+        currentParticipants,
+        currentCount,
+        currentConfig.maxTurnsPerRound,
+        nextMentionedId
       );
       addMessage(message);
-      incrementAutoDebateCount();
+      incrementRef.current();
 
-      if (action === 'WAIT' || autoDebateCount >= config.maxTurnsPerRound) {
+      if (action === 'WAIT' || currentCount >= currentConfig.maxTurnsPerRound) {
         setIsWaitingForUser(true);
       }
     } catch (err) {
@@ -77,28 +125,20 @@ export function useDebate() {
       setThinkingSpeakerId(null);
       setIsStreaming(false);
     }
-  }, [
-    isStreaming,
-    participants,
-    autoDebateCount,
-    messages,
-    config.maxTurnsPerRound,
-    setThinkingSpeakerId,
-    setIsStreaming,
-    addMessage,
-    incrementAutoDebateCount,
-    setIsWaitingForUser,
-  ]);
+  }, [isStreaming, setThinkingSpeakerId, setIsStreaming, addMessage, setIsWaitingForUser, setMentionedId]);
 
   const summarize = useCallback(async () => {
+    setIsSummarizing(true);
     try {
       const summary = await fetchSummary(topic, 'debate-1', messages, participants);
       setSummary(summary);
       setAppState('SUMMARY');
     } catch (err) {
       console.error('Failed to summarize:', err);
+    } finally {
+      setIsSummarizing(false);
     }
-  }, [topic, messages, participants, setSummary, setAppState]);
+  }, [topic, messages, participants, setSummary, setAppState, setIsSummarizing]);
 
   // Auto-debate effect
   useEffect(() => {
@@ -106,13 +146,12 @@ export function useDebate() {
     if (isWaitingForUser || isStreaming) return;
     if (autoDebateCount === 0) return; // Waiting for startDebate to complete first
 
-    const delay = getDelay(config.speed);
     const timer = setTimeout(() => {
       generateNextTurn();
-    }, delay);
+    }, DEBATE_DELAY);
 
     return () => clearTimeout(timer);
-  }, [appState, isWaitingForUser, isStreaming, autoDebateCount, config.speed, generateNextTurn]);
+  }, [appState, isWaitingForUser, isStreaming, autoDebateCount, generateNextTurn]);
 
   return {
     startDebate,

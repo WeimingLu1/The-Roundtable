@@ -10,9 +10,9 @@ export function LandingView() {
         className="w-full max-w-xl"
       >
         <div className="text-center mb-8">
-          <h1 className="text-5xl font-bold text-white mb-2">The Roundtable</h1>
+          <h1 className="text-5xl font-bold text-white mb-2">圆桌讨论</h1>
           <p className="text-purple-200 text-lg">
-            Enter a topic and summon three AI personas to debate it
+            输入一个话题，邀请三位AI嘉宾展开辩论
           </p>
         </div>
         <TopicInput />

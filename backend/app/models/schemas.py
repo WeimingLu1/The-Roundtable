@@ -67,6 +67,7 @@ class DebateTurnRequest(BaseModel):
     participants: list[Participant]
     turnCount: int
     maxTurns: int = 3
+    mentionedId: Optional[str] = None  # If user @mentioned someone, they should speak next
 
 
 class TurnResponse(BaseModel):

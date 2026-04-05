@@ -27,10 +27,10 @@ export function RandomButton({ onTopicGenerated }: RandomButtonProps) {
       {isLoading ? (
         <>
           <Spinner className="mr-2" />
-          Generating...
+          生成中...
         </>
       ) : (
-        '🎲 Random'
+        '🎲 随机'
       )}
     </Button>
   );

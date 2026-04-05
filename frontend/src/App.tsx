@@ -13,18 +13,31 @@ function GeneratingPanel() {
   const { topic, setParticipants, setAppState } = useAppStore();
 
   useEffect(() => {
+    let cancelled = false;
+
     const generate = async () => {
       try {
         const { participants: newParticipants } = await fetchPanel(topic);
+
+        // Check if we were cancelled or if app state changed
+        if (cancelled) return;
+
+        const currentState = useAppStore.getState().appState;
+        if (currentState !== 'GENERATING_PANEL') return;
+
         setParticipants(newParticipants);
         setAppState('PANEL_REVIEW');
       } catch (err) {
-        console.error('Failed to generate panel:', err);
+        if (cancelled) return;
         setAppState('LANDING');
       }
     };
     generate();
-  }, []);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [topic]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
@@ -50,17 +63,8 @@ function PanelReview() {
   return (
     <ParticipantList
       participants={participants}
+      topic={topic}
       onUpdate={(id, updates) => useAppStore.getState().updateParticipant(id, updates)}
-      onReplace={async (id) => {
-        try {
-          const topic = useAppStore.getState().topic;
-          const { participants: newParticipants } = await fetchPanel(topic);
-          const updated = newParticipants.find((p) => p.id === id) || newParticipants[0];
-          useAppStore.getState().updateParticipant(id, updated);
-        } catch (err) {
-          console.error('Failed to replace participant:', err);
-        }
-      }}
       onConfirm={handleConfirm}
       onCancel={handleCancel}
     />
@@ -75,7 +79,7 @@ function DebateController() {
     if (participants.length === 3) {
       startDebate();
     }
-  }, [participants]);
+  }, [participants, startDebate]);
 
   return (
     <>

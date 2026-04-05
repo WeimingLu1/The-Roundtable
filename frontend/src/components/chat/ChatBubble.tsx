@@ -37,10 +37,10 @@ export function ChatBubble({ message, participant, isHost = false }: ChatBubbleP
         )}
         <div
           className={cn(
-            'px-4 py-3 rounded-2xl',
+            'px-4 py-3 rounded-2xl shadow-sm',
             isUser
-              ? 'bg-primary text-white rounded-tr-sm'
-              : 'bg-gray-100 text-gray-900 rounded-tl-sm'
+              ? 'bg-indigo-600 text-white rounded-tr-sm'
+              : 'bg-white text-gray-900 rounded-tl-sm border border-gray-200'
           )}
         >
           <p className="whitespace-pre-wrap">{message.content}</p>

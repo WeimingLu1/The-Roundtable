@@ -19,7 +19,7 @@ export function TopicInput() {
       <Textarea
         value={localTopic}
         onChange={(e) => setLocalTopic(e.target.value)}
-        placeholder="What should the roundtable debate today?"
+        placeholder="今天我们应该讨论什么话题？"
         rows={3}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.shiftKey) {
@@ -30,7 +30,7 @@ export function TopicInput() {
       />
       <div className="flex gap-3">
         <Button onClick={handleStart} disabled={!localTopic.trim()} className="flex-1">
-          Summon Guests
+          邀请嘉宾
         </Button>
         <RandomButton onTopicGenerated={setLocalTopic} />
       </div>

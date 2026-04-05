@@ -39,24 +39,24 @@ The Minimax API uses Anthropic-compatible endpoint:
 
 **API Format**: Uses `https://api.minimaxi.com/anthropic/v1/messages` endpoint with Anthropic-style messages format. The server converts between OpenAI-style (client) and Anthropic-style (API) formats.
 
-## Current Issues (as of 2026/04/04)
+## Fixed Issues (as of 2026/04/05)
 
-### Known Bugs
+### Recently Fixed
 
-1. **Third speaker's message may be truncated** - The third participant's opening statement sometimes shows "..." as placeholder when the API response is slow or truncated. This is a timing issue in the message display.
+1. **Discussion reverts to participant list** - Fixed by adding cancellation guard to prevent React StrictMode double-mount issues.
 
-2. **Random topic button has no loading indicator** - When clicking "Random" topic, there's no visual feedback showing the request is in progress.
+2. **Double-start of debate** - Fixed by adding `debateInProgressRef` to prevent concurrent debate starts.
 
-3. **@ mention autocomplete not working** - When user types @ in the input area, participant name autocomplete doesn't appear.
+3. **Messages showing `||` format prefix** - Fixed by parsing and stripping format prefix from partial SSE content.
 
-4. **AI output is not streamed** - AI responses appear all at once instead of streaming word-by-word. The streaming code is commented out due to API compatibility issues.
+4. **Panel generation stale state** - Fixed by checking current app state before applying API response.
 
 ### Testing Status
 
-- **Panel generation**: Working (3 participants generated with names, titles, stances)
+- **Panel generation**: Working (with 30s timeout fallback)
 - **Opening statements**: Working (all 3 speakers produce content)
-- **Discussion auto-debate**: Working (messages flow between speakers)
-- **Thinking tags**: FIXED - API now returns text blocks separately from thinking blocks
+- **Discussion auto-debate**: Working (messages flow between speakers, no state revert)
+- **Message format**: Working (no `||` artifacts in displayed content)
 - **Summary generation**: Working
 
 ## Running the Project
@@ -120,11 +120,12 @@ const { chromium } = require('@playwright/test');
 - [x] Fix thinking tags appearing in messages - FIXED (switched to Anthropic API format)
 - [x] Panel generation hanging - FIXED (added timeout fallback)
 - [x] Auto-debate not starting - FIXED (set isWaitingForUser to false after opening statements)
+- [x] Discussion reverts to participant list - FIXED (added cancellation guard for StrictMode)
+- [x] Double-start of debate - FIXED (added debateInProgressRef)
+- [x] Messages showing || format prefix - FIXED (strip format prefix in partial SSE)
 - [ ] Fix third speaker truncation issue
 - [ ] Add loading indicator for Random topic button
 - [ ] Implement @ mention autocomplete
 - [ ] Enable streaming output for AI responses
 - [ ] Add better error handling for API failures
-- [ ] Verify all state transitions work correctly
 - [ ] Test with multiple discussion topics
-- [ ] Add user input during discussion (WAIT_FOR_USER state)

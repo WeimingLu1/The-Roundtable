@@ -32,7 +32,7 @@ export function TypingIndicator({ participant }: TypingIndicatorProps) {
           className="w-2 h-2 bg-gray-400 rounded-full"
         />
       </div>
-      <span className="text-sm text-gray-500">{participant.name} is thinking...</span>
+      <span className="text-sm text-gray-500">{participant.name} 正在输入...</span>
     </motion.div>
   );
 }

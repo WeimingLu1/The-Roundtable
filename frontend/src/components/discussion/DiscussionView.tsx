@@ -14,17 +14,24 @@ export function DiscussionView({ onSummarize }: DiscussionViewProps) {
     messages,
     userName,
     isWaitingForUser,
+    isSummarizing,
     setIsWaitingForUser,
+    setMentionedId,
     addMessage,
   } = useAppStore();
 
-  const handleUserMessage = (content: string) => {
+  const handleUserMessage = (content: string, mentionedId?: string) => {
     addMessage({
       id: `user-${Date.now()}`,
       participantId: 'user',
       content,
       timestamp: Date.now(),
     });
+    // If someone was mentioned, set that as the next speaker
+    if (mentionedId) {
+      setMentionedId(mentionedId);
+    }
+    // Resume debate
     setIsWaitingForUser(false);
   };
 
@@ -37,10 +44,12 @@ export function DiscussionView({ onSummarize }: DiscussionViewProps) {
         userName={userName}
       />
       <InputArea
+        participants={participants}
         onSend={handleUserMessage}
         onSummarize={onSummarize}
         disabled={!isWaitingForUser}
         isWaiting={!isWaitingForUser}
+        isSummarizing={isSummarizing}
       />
     </div>
   );

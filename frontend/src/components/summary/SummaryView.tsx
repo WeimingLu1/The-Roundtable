@@ -6,13 +6,13 @@ interface SummaryViewProps {
 }
 
 export function SummaryView({ onNewDebate }: SummaryViewProps) {
-  const { summary, participants } = useAppStore();
+  const { summary, participants, setAppState } = useAppStore();
   if (!summary) return null;
   return (
     <SummaryModal
       summary={summary}
       participants={participants}
-      onClose={() => {}}
+      onClose={() => setAppState('DEBATING')}
       onNewDebate={onNewDebate}
     />
   );

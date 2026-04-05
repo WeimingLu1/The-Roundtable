@@ -1,7 +1,5 @@
 import type { Participant } from '@/types';
 import { ParticipantAvatar } from '../participants/ParticipantAvatar';
-import { SpeedControl } from './SpeedControl';
-import { useAppStore } from '@/stores/useAppStore';
 import { ArrowLeft } from 'lucide-react';
 
 interface DiscussionHeaderProps {
@@ -11,8 +9,6 @@ interface DiscussionHeaderProps {
 }
 
 export function DiscussionHeader({ topic, participants, onBack }: DiscussionHeaderProps) {
-  const { config, setConfig } = useAppStore();
-
   return (
     <div className="sticky top-0 z-10 bg-white/80 backdrop-blur border-b border-gray-200 px-4 py-3">
       <div className="flex items-center justify-between">
@@ -31,10 +27,6 @@ export function DiscussionHeader({ topic, participants, onBack }: DiscussionHead
             </div>
           </div>
         </div>
-        <SpeedControl
-          speed={config.speed}
-          onChange={(speed) => setConfig({ speed })}
-        />
       </div>
     </div>
   );

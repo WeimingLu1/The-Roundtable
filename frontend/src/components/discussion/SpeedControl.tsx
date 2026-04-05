@@ -7,9 +7,9 @@ interface SpeedControlProps {
 }
 
 const speedOptions: { value: DebateConfig['speed']; label: string }[] = [
-  { value: 'slow', label: '🐢 Slow' },
-  { value: 'normal', label: '🚶 Normal' },
-  { value: 'fast', label: '⚡ Fast' },
+  { value: 'slow', label: '🐢 慢' },
+  { value: 'normal', label: '🚶 正常' },
+  { value: 'fast', label: '⚡ 快' },
 ];
 
 export function SpeedControl({ speed, onChange }: SpeedControlProps) {
