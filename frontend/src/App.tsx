@@ -9,22 +9,35 @@ import { SummaryView } from '@/components/summary/SummaryView';
 import { fetchPanel } from '@/services/api';
 import { Spinner } from '@/components/ui/spinner';
 
-function PanelReview() {
-  const { topic, participants, setParticipants, setAppState } = useAppStore();
-
-  const handleGenerate = async () => {
-    try {
-      const { participants: newParticipants } = await fetchPanel(topic);
-      setParticipants(newParticipants);
-      setAppState('PANEL_REVIEW');
-    } catch (err) {
-      console.error('Failed to generate panel:', err);
-    }
-  };
+function GeneratingPanel() {
+  const { topic, setParticipants, setAppState } = useAppStore();
 
   useEffect(() => {
-    handleGenerate();
+    const generate = async () => {
+      try {
+        const { participants: newParticipants } = await fetchPanel(topic);
+        setParticipants(newParticipants);
+        setAppState('PANEL_REVIEW');
+      } catch (err) {
+        console.error('Failed to generate panel:', err);
+        setAppState('LANDING');
+      }
+    };
+    generate();
   }, []);
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+      <div className="text-center">
+        <Spinner className="h-8 w-8 mx-auto mb-4 text-white" />
+        <p className="text-white text-lg">Summoning guests...</p>
+      </div>
+    </div>
+  );
+}
+
+function PanelReview() {
+  const { topic, participants, setAppState } = useAppStore();
 
   const handleConfirm = () => {
     setAppState('DEBATING');
@@ -34,20 +47,13 @@ function PanelReview() {
     setAppState('LANDING');
   };
 
-  if (participants.length === 0) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Spinner />
-      </div>
-    );
-  }
-
   return (
     <ParticipantList
       participants={participants}
       onUpdate={(id, updates) => useAppStore.getState().updateParticipant(id, updates)}
       onReplace={async (id) => {
         try {
+          const topic = useAppStore.getState().topic;
           const { participants: newParticipants } = await fetchPanel(topic);
           const updated = newParticipants.find((p) => p.id === id) || newParticipants[0];
           useAppStore.getState().updateParticipant(id, updated);
@@ -91,33 +97,11 @@ export default function App() {
     case 'LANDING':
       return <LandingView />;
     case 'GENERATING_PANEL':
-      return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-          <div className="text-center">
-            <Spinner className="h-8 w-8 mx-auto mb-4 text-white" />
-            <p className="text-white text-lg">Summoning guests...</p>
-          </div>
-        </div>
-      );
+      return <GeneratingPanel />;
     case 'PANEL_REVIEW':
       return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4">
-          <ParticipantList
-            participants={useAppStore.getState().participants}
-            onUpdate={(id, updates) => useAppStore.getState().updateParticipant(id, updates)}
-            onReplace={async (id) => {
-              try {
-                const topic = useAppStore.getState().topic;
-                const { participants: newParticipants } = await fetchPanel(topic);
-                const updated = newParticipants.find((p) => p.id === id) || newParticipants[0];
-                useAppStore.getState().updateParticipant(id, updated);
-              } catch (err) {
-                console.error('Failed to replace participant:', err);
-              }
-            }}
-            onConfirm={() => setAppState('DEBATING')}
-            onCancel={() => setAppState('LANDING')}
-          />
+          <PanelReview />
         </div>
       );
     case 'DEBATING':
