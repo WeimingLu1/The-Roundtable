@@ -1,6 +1,7 @@
 import os
 from typing import AsyncGenerator
 from anthropic import Anthropic
+from anthropic.types import TextBlock
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -30,7 +31,12 @@ class LLMService:
             max_tokens=max_tokens,
             messages=messages,
         )
-        return response.content[0].text
+        # Extract text from all content blocks, skipping thinking blocks
+        texts = []
+        for block in response.content:
+            if isinstance(block, TextBlock):
+                texts.append(block.text)
+        return "\n".join(texts)
 
     async def stream_content(self, system: str, messages: list[dict], max_tokens: int = 1024) -> AsyncGenerator[str, None]:
         with self.client.messages.stream(
