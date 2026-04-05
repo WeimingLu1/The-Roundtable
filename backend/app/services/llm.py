@@ -6,7 +6,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-MODEL = "claude-sonnet-4-20250514"
+ANTHROPIC_BASE_URL = os.getenv("ANTHROPIC_BASE_URL", "https://api.minimaxi.com/anthropic/v1")
+MODEL = "MiniMax-M2.7"
 
 
 class LLMService:
@@ -16,7 +17,10 @@ class LLMService:
     @property
     def client(self) -> Anthropic:
         if self._client is None:
-            self._client = Anthropic(api_key=ANTHROPIC_API_KEY)
+            self._client = Anthropic(
+                api_key=ANTHROPIC_API_KEY,
+                base_url=ANTHROPIC_BASE_URL,
+            )
         return self._client
 
     async def generate_content(self, system: str, messages: list[dict], max_tokens: int = 1024) -> str:
