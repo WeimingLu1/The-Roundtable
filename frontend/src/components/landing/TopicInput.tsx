@@ -5,20 +5,20 @@ import { Textarea } from '@/components/ui/textarea';
 import { RandomButton } from './RandomButton';
 
 export function TopicInput() {
-  const [topic, setTopic] = useState('');
+  const [localTopic, setLocalTopic] = useState('');
   const { setTopic, setAppState } = useAppStore();
 
   const handleStart = () => {
-    if (!topic.trim()) return;
-    setTopic(topic.trim());
+    if (!localTopic.trim()) return;
+    setTopic(localTopic.trim());
     setAppState('GENERATING_PANEL');
   };
 
   return (
     <div className="space-y-4">
       <Textarea
-        value={topic}
-        onChange={(e) => setTopic(e.target.value)}
+        value={localTopic}
+        onChange={(e) => setLocalTopic(e.target.value)}
         placeholder="What should the roundtable debate today?"
         rows={3}
         onKeyDown={(e) => {
@@ -29,10 +29,10 @@ export function TopicInput() {
         }}
       />
       <div className="flex gap-3">
-        <Button onClick={handleStart} disabled={!topic.trim()} className="flex-1">
+        <Button onClick={handleStart} disabled={!localTopic.trim()} className="flex-1">
           Summon Guests
         </Button>
-        <RandomButton onTopicGenerated={setTopic} />
+        <RandomButton onTopicGenerated={setLocalTopic} />
       </div>
     </div>
   );

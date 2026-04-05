@@ -1,13 +1,13 @@
-import type { Summary, Participant } from '@/types';
+import { useAppStore } from '@/stores/useAppStore';
 import { SummaryModal } from './SummaryModal';
 
 interface SummaryViewProps {
-  summary: Summary;
-  participants: Participant[];
   onNewDebate: () => void;
 }
 
-export function SummaryView({ summary, participants, onNewDebate }: SummaryViewProps) {
+export function SummaryView({ onNewDebate }: SummaryViewProps) {
+  const { summary, participants } = useAppStore();
+  if (!summary) return null;
   return (
     <SummaryModal
       summary={summary}

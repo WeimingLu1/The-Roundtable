@@ -1,4 +1,5 @@
 import json
+import re
 import uuid
 from fastapi import APIRouter, Body
 from app.models.schemas import PanelResponse, Participant
@@ -33,24 +34,44 @@ FALLBACK_PARTICIPANTS = [
 ]
 
 
+def extract_json_array(text: str) -> list | None:
+    """Extract JSON array from text."""
+    # Find array in text
+    match = re.search(r'\[[\s\S]*\]', text)
+    if match:
+        try:
+            return json.loads(match.group())
+        except json.JSONDecodeError:
+            pass
+    try:
+        data = json.loads(text.strip())
+        if isinstance(data, list):
+            return data
+    except json.JSONDecodeError:
+        pass
+    return None
+
+
 @router.post("/generate", response_model=PanelResponse)
-async def generate_panel(topic: str):
+async def generate_panel(body: dict = Body(...)):
+    topic = body.get("topic", "")
     response_text = await llm_service.generate_content(
         system=PANEL_SYSTEM_PROMPT.format(topic=topic),
         messages=[{"role": "user", "content": f"Generate 3 debate participants for: {topic}"}],
         max_tokens=1024,
     )
-    try:
-        data = json.loads(response_text)
+    data = extract_json_array(response_text)
+    if data and isinstance(data, list) and len(data) > 0:
         participants = []
         for i, p in enumerate(data):
-            participants.append(Participant(
-                id=p.get("id", f"participant_{i+1}"),
-                name=p["name"],
-                title=p["title"],
-                stance=p["stance"],
-                color=p.get("color", "#6366F1"),
-            ))
-        return PanelResponse(participants=participants)
-    except (json.JSONDecodeError, KeyError) as e:
-        return PanelResponse(participants=FALLBACK_PARTICIPANTS)
+            if isinstance(p, dict) and "name" in p:
+                participants.append(Participant(
+                    id=p.get("id", f"participant_{i+1}"),
+                    name=p["name"],
+                    title=p.get("title", ""),
+                    stance=p.get("stance", "")[:50],  # Truncate to max 50 chars
+                    color=p.get("color", "#6366F1"),
+                ))
+        if participants:
+            return PanelResponse(participants=participants)
+    return PanelResponse(participants=FALLBACK_PARTICIPANTS)
