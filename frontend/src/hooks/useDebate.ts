@@ -92,13 +92,13 @@ export function useDebate() {
 
   const summarize = useCallback(async () => {
     try {
-      const summary = await fetchSummary('debate-1', messages, participants);
+      const summary = await fetchSummary(topic, 'debate-1', messages, participants);
       setSummary(summary);
       setAppState('SUMMARY');
     } catch (err) {
       console.error('Failed to summarize:', err);
     }
-  }, [messages, participants, setSummary, setAppState]);
+  }, [topic, messages, participants, setSummary, setAppState]);
 
   // Auto-debate effect
   useEffect(() => {

@@ -136,6 +136,7 @@ export async function debateTurn(
 }
 
 export async function fetchSummary(
+  topic: string,
   debateId: string,
   history: Message[],
   participants: Participant[]
@@ -143,7 +144,7 @@ export async function fetchSummary(
   const res = await fetch(`${API_BASE}/debate/summarize`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ debateId, history, participants }),
+    body: JSON.stringify({ topic, debateId, history, participants }),
   });
   return handleResponse(res);
 }

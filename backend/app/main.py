@@ -1,9 +1,18 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.db import init_db
 from app.routers import topics, panel, debate
 
-app = FastAPI(title="RoundTable API", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="RoundTable API", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
