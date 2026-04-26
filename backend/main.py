@@ -38,6 +38,7 @@ AVATAR_COLORS = [
 # --- Request/Response Models ---
 class UserContext(BaseModel):
     nickname: str
+    identity: str
     language: str
 
 
@@ -365,19 +366,19 @@ Action is "WAIT" if force yielding, otherwise "CONTINUE".
         action = ""
 
         if len(parts) >= 4:
-            stance = parts[0].strip().upper()
+            stance = parts[0].strip().upper() if parts[0] else "NEUTRAL"
             intensity = int(parts[1].strip()) if parts[1].strip().isdigit() else 3
-            message = parts[2].strip()
-            action = parts[3].strip()
-        elif len(parts) >= 3:
+            message = parts[2].strip() if len(parts) > 2 else ""
+            action = parts[3].strip() if len(parts) > 3 else ""
+        elif len(parts) == 3:
             if parts[1].strip().isdigit():
-                stance = parts[0].strip().upper()
+                stance = parts[0].strip().upper() if parts[0] else "NEUTRAL"
                 intensity = int(parts[1].strip())
-                message = parts[2].strip()
+                message = parts[2].strip() if len(parts) > 2 else ""
             else:
-                stance = parts[0].strip().upper()
-                message = parts[1].strip()
-                action = parts[2].strip()
+                stance = parts[0].strip().upper() if parts[0] else "NEUTRAL"
+                message = parts[1].strip() if len(parts) > 1 else ""
+                action = parts[2].strip() if len(parts) > 2 else ""
         else:
             message = raw
 

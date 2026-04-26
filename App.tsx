@@ -122,6 +122,7 @@ export default function App() {
       setOpeningSpeakerIndex(prev => prev + 1);
     }).catch(e => {
       console.error('Opening statement error:', e);
+      turnInProgressRef.current = false;
     }).finally(() => {
       setThinkingSpeakerId(null);
       setIsTyping(false);
@@ -182,6 +183,7 @@ export default function App() {
       })
       .catch(e => {
         console.error('Discussion turn error:', e);
+        turnInProgressRef.current = false;
       })
       .finally(() => {
         setThinkingSpeakerId(null);
