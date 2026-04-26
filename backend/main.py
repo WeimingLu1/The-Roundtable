@@ -23,7 +23,7 @@ api_key = os.environ.get("ANTHROPIC_API_KEY")
 if not api_key:
     raise ValueError("ANTHROPIC_API_KEY environment variable is required")
 
-MODEL = "MiniMax-M2.7"
+MODEL = "MiniMax-M2"
 MINIMAX_BASE_URL = "https://api.minimaxi.com/anthropic/v1/messages"
 
 # Reuse a single httpx client for connection pooling
@@ -108,7 +108,7 @@ def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int = 1024
 
     data = {
         "model": MODEL,
-        "max_tokens": max_tokens,
+        "max_tokens": None if json_mode else max_tokens,  # No limit for JSON mode
         "messages": [{"role": "user", "content": prompt}],
         "extra_body": {"thinking_enabled": False}
     }
@@ -116,6 +116,9 @@ def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int = 1024
     if json_mode:
         data["extra_body"]["response_format"] = {"type": "json_object"}
         data["messages"] = [{"role": "user", "content": prompt.rstrip() + "\n\nRespond with ONLY valid JSON. No explanation, no markdown."}]
+        # Remove max_tokens key entirely for JSON mode so API uses default
+        if data["max_tokens"] is None:
+            del data["max_tokens"]
 
     response = http_client.post(MINIMAX_BASE_URL, json=data, headers=headers)
     response.raise_for_status()
@@ -156,7 +159,7 @@ def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int = 1024
 def generate_random_topic(req: GenerateRandomTopicRequest):
     prompt = f"Generate a short, fun debate topic about a random idea. Language: {req.language}. One sentence only."
     try:
-        text = get_ai_response(prompt, max_tokens=2048)
+        text = get_ai_response(prompt, max_tokens=512)
         return {"topic": text.strip()}
     except Exception as e:
         print(f"Error: {e}")
@@ -170,7 +173,7 @@ Language: {req.userContext.language}
 Select 3 diverse ALIVE experts for this debate. Return JSON:
 {{"participants": [{{"name": "?", "title": "?", "stance": "?"}}]}}"""
     try:
-        text = get_ai_response(prompt, json_mode=True, max_tokens=2048)
+        text = get_ai_response(prompt, json_mode=True, max_tokens=768)
         import json
         data = json.loads(text)
         participants = data.get("participants", [])
