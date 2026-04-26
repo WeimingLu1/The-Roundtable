@@ -4,6 +4,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Any
+from dotenv import load_dotenv
+load_dotenv()
 
 app = FastAPI()
 
@@ -103,11 +105,12 @@ def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int = 1024
     data = {
         "model": MODEL,
         "max_tokens": max_tokens,
-        "messages": [{"role": "user", "content": prompt}]
+        "messages": [{"role": "user", "content": prompt}],
+        "extra_body": {"thinking_enabled": False}
     }
 
     if json_mode:
-        data["extra_body"] = {"response_format": {"type": "json_object"}}
+        data["extra_body"]["response_format"] = {"type": "json_object"}
         data["messages"] = [{"role": "user", "content": prompt.rstrip() + "\n\nRespond with ONLY valid JSON. No explanation, no markdown."}]
 
     with httpx.Client(timeout=60.0) as client:
@@ -136,7 +139,7 @@ def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int = 1024
 def generate_random_topic(req: GenerateRandomTopicRequest):
     prompt = f"Generate a short, fun debate topic about a random idea. Language: {req.language}. One sentence only."
     try:
-        text = get_ai_response(prompt, max_tokens=256)
+        text = get_ai_response(prompt, max_tokens=512)
         return {"topic": text.strip()}
     except Exception as e:
         print(f"Error: {e}")
