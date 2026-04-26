@@ -7,16 +7,24 @@ const AVATAR_COLORS = [
   '#3B82F6', '#6366F1', '#8B5CF6', '#EC4899', '#84CC16'
 ];
 
-async function apiCall<T>(endpoint: string, body: any): Promise<T> {
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) {
-    throw new Error(`API error: ${response.status}`);
+async function apiCall<T>(endpoint: string, body: any, timeoutMs: number = 30000): Promise<T> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+    return response.json();
+  } finally {
+    clearTimeout(timeoutId);
   }
-  return response.json();
 }
 
 export const generateRandomTopic = async (language: string): Promise<string> => {

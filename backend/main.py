@@ -93,12 +93,7 @@ class GenerateSummaryRequest(BaseModel):
 
 
 # --- Helper ---
-def get_ai_response(prompt: str, json_mode: bool = False) -> str:
-    extra_headers = {}
-    if json_mode:
-        extra_headers["extra_body"] = {"response_format": {"type": "json_object"}}
-        prompt = prompt + "\n\nYou must respond with valid JSON only. No markdown, no explanation."
-
+def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int = 1024) -> str:
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -107,12 +102,13 @@ def get_ai_response(prompt: str, json_mode: bool = False) -> str:
 
     data = {
         "model": MODEL,
-        "max_tokens": 1024,
+        "max_tokens": max_tokens,
         "messages": [{"role": "user", "content": prompt}]
     }
 
     if json_mode:
         data["extra_body"] = {"response_format": {"type": "json_object"}}
+        data["messages"] = [{"role": "user", "content": prompt.rstrip() + "\n\nRespond with ONLY valid JSON. No explanation, no markdown."}]
 
     with httpx.Client(timeout=60.0) as client:
         response = client.post(MINIMAX_BASE_URL, json=data, headers=headers)
@@ -140,7 +136,7 @@ def get_ai_response(prompt: str, json_mode: bool = False) -> str:
 def generate_random_topic(req: GenerateRandomTopicRequest):
     prompt = f"Generate a short, fun debate topic about a random idea. Language: {req.language}. One sentence only."
     try:
-        text = get_ai_response(prompt)
+        text = get_ai_response(prompt, max_tokens=256)
         return {"topic": text.strip()}
     except Exception as e:
         print(f"Error: {e}")
@@ -149,25 +145,12 @@ def generate_random_topic(req: GenerateRandomTopicRequest):
 
 @app.post("/api/generate_panel")
 def generate_panel(req: GeneratePanelRequest):
-    prompt = f"""
-You are casting a high-intellect "Roundtable" discussion.
-Topic: "{req.topic}"
-Language: "{req.userContext.language}"
-Host: "{req.userContext.nickname}" (The User)
-
-Generate 3 GUESTS (Experts/Figures).
-
-**CRITICAL SELECTION RULES**:
-1. **MUST BE ALIVE (Contemporary Figures)**: Do NOT select deceased historical figures unless the topic specifically mentions history or dead people. The user wants a REALISTIC modern debate.
-2. **GLOBAL RELEVANCE**: Select the 3 people in the world BEST suited to discuss this specific topic, regardless of nationality.
-3. **DIVERSITY**: Ensure distinct perspectives (e.g., One Tech Optimist, One Ethicist, One Skeptic).
-4. **CONCISENESS**: The 'stance' MUST be a short, punchy motto or philosophy. **MAXIMUM 20 WORDS**.
-
-Return JSON: {{ "participants": [{{ "name": "string", "title": "string", "stance": "string" }}] }}
-"""
+    prompt = f"""Topic: {req.topic}
+Language: {req.userContext.language}
+Select 3 diverse ALIVE experts for this debate. Return JSON:
+{{"participants": [{{"name": "?", "title": "?", "stance": "?"}}]}}"""
     try:
-        text = get_ai_response(prompt, json_mode=True)
-        print(f"DEBUG generate_panel: got text={text[:100]!r}")
+        text = get_ai_response(prompt, json_mode=True, max_tokens=768)
         import json
         data = json.loads(text)
         participants = data.get("participants", [])
@@ -200,24 +183,12 @@ Return JSON: {{ "participants": [{{ "name": "string", "title": "string", "stance
 
 @app.post("/api/generate_single_participant")
 def generate_single_participant(req: GenerateSingleParticipantRequest):
-    prompt = f"""
-User Input: "{req.inputQuery}"
-Discussion Topic: "{req.topic}"
+    prompt = f"""User: {req.inputQuery}
+Topic: {req.topic}
 Language: {req.userContext.language}
-
-Task: Identify the guest based on the User Input.
-1. If the input is a specific NAME (e.g., "Elon Musk"), use that person.
-2. If the input is a DESCRIPTION (e.g., "A harsh critic of AI", "A Roman Emperor", "Someone who loves Mars"), **identify the single best matching real-world figure** (Historical or Contemporary).
-
-Return JSON:
-{{
-  "name": "The Actual Name of the person (e.g. Elon Musk)",
-  "title": "Short Job Title (e.g. CEO of X)",
-  "stance": "A single sentence opinion on the topic (Max 15 words)."
-}}
-"""
+Identify this person. Return JSON: {{"name":"?","title":"?","stance":"?"}}"""
     try:
-        text = get_ai_response(prompt, json_mode=True)
+        text = get_ai_response(prompt, json_mode=True, max_tokens=384)
         import json
         data = json.loads(text)
         return data
@@ -424,26 +395,13 @@ def generate_summary(req: GenerateSummaryRequest):
         for m in req.messageHistory
     ])
 
-    prompt = f"""
-Analyze the discussion about "{req.topic}".
+    prompt = f"""Topic: {req.topic}
 Language: {req.userContext.language}
-
-Transcript:
-{transcript}
-
-Task:
-1. State the Discussion Topic clearly.
-2. Summarize the Core Viewpoint of EACH participant (including Host if they made points).
-3. List future Open Questions.
-
-Return JSON: {{
-    "topic": "string",
-    "core_viewpoints": [{{ "speaker": "string", "point": "string" }}],
-    "questions": ["string"]
-}}
-"""
+Transcript: {transcript}
+Summarize: topic, each speaker's view, open questions.
+Return JSON: {{"topic":"?","core_viewpoints":[{{"speaker":"?","point":"?"}}],"questions":["?"]}}"""
     try:
-        text = get_ai_response(prompt, json_mode=True)
+        text = get_ai_response(prompt, json_mode=True, max_tokens=1024)
         import json
         data = json.loads(text)
         return data
