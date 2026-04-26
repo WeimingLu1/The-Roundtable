@@ -134,6 +134,20 @@ def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int = 1024
                     text_result = text_result[:-3]
                 text_result = text_result.strip()
             return text_result
+
+    # Fallback: try to extract JSON from thinking block
+    import re
+    for block in content:
+        if block.get("type") == "thinking":
+            thinking = block.get("thinking", "")
+            # Look for JSON object with expected key
+            match = re.search(r'\{[^{}]*\}', thinking, re.DOTALL)
+            if match:
+                try:
+                    json.loads(match.group(0))
+                    return match.group(0)
+                except json.JSONDecodeError:
+                    pass
     return ""
 
 
@@ -142,7 +156,7 @@ def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int = 1024
 def generate_random_topic(req: GenerateRandomTopicRequest):
     prompt = f"Generate a short, fun debate topic about a random idea. Language: {req.language}. One sentence only."
     try:
-        text = get_ai_response(prompt, max_tokens=512)
+        text = get_ai_response(prompt, max_tokens=2048)
         return {"topic": text.strip()}
     except Exception as e:
         print(f"Error: {e}")
@@ -156,7 +170,7 @@ Language: {req.userContext.language}
 Select 3 diverse ALIVE experts for this debate. Return JSON:
 {{"participants": [{{"name": "?", "title": "?", "stance": "?"}}]}}"""
     try:
-        text = get_ai_response(prompt, json_mode=True, max_tokens=768)
+        text = get_ai_response(prompt, json_mode=True, max_tokens=2048)
         import json
         data = json.loads(text)
         participants = data.get("participants", [])
