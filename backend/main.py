@@ -157,9 +157,12 @@ def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int = 1024
 # --- Endpoints ---
 @app.post("/api/generate_random_topic")
 def generate_random_topic(req: GenerateRandomTopicRequest):
-    prompt = f"Generate a short, fun debate topic about a random idea. Language: {req.language}. One sentence only."
+    lang_instruction = "in Chinese" if req.language.lower() == "chinese" else "in English" if req.language.lower() == "english" else f"in {req.language}"
+    prompt = f"Generate a short, interesting debate topic {lang_instruction}. Make it thought-provoking and suitable for panel discussion. Respond with ONLY the topic text, no explanation."
     try:
         text = get_ai_response(prompt, max_tokens=512)
+        if not text or len(text.strip()) < 5:
+            raise ValueError("Empty or too short response from AI")
         return {"topic": text.strip()}
     except Exception as e:
         print(f"Error: {e}")
@@ -182,9 +185,9 @@ Select 3 diverse ALIVE experts for this debate. Return JSON:
         print(f"Error generating panel: {e}")
         traceback.print_exc()
         participants = [
-            {"name": "Sam Altman", "title": "CEO of OpenAI", "stance": "AI will elevate humanity."},
-            {"name": "Yuval Noah Harari", "title": "Historian & Author", "stance": "Algorithms may hack humans."},
-            {"name": "Slavoj Žižek", "title": "Philosopher", "stance": "Ideology is in the machine."},
+            {"name": "Dr. Sarah Chen", "title": "Technology Ethics Researcher", "stance": "We should approach AI development cautiously with strong regulations."},
+            {"name": "Prof. Michael Torres", "title": "AI Systems Engineer", "stance": "Innovation requires room for experimentation; over-regulation stifles progress."},
+            {"name": "Dr. Aisha Patel", "title": "Cognitive Science Professor", "stance": "Human-AI collaboration offers the best path forward for society."},
         ]
 
     import random

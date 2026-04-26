@@ -60,9 +60,9 @@ export const generatePanel = async (topic: string, userContext: UserContext): Pr
   } catch (error) {
     console.error('Error generating panel:', error);
     return [
-      { id: 'expert_0', name: 'Sam Altman', roleType: 'expert', title: 'CEO of OpenAI', stance: 'AI will elevate humanity.', color: '#EF4444' },
-      { id: 'expert_1', name: 'Yuval Noah Harari', roleType: 'expert', title: 'Historian & Author', stance: 'Algorithms may hack humans.', color: '#3B82F6' },
-      { id: 'expert_2', name: 'Slavoj Žižek', roleType: 'expert', title: 'Philosopher', stance: 'Ideology is in the machine.', color: '#10B981' },
+      { id: 'expert_0', name: 'Dr. Sarah Chen', roleType: 'expert', title: 'Technology Ethics Researcher', stance: 'We should approach AI development cautiously with strong regulations.', color: '#EF4444' },
+      { id: 'expert_1', name: 'Prof. Michael Torres', roleType: 'expert', title: 'AI Systems Engineer', stance: 'Innovation requires room for experimentation; over-regulation stifles progress.', color: '#3B82F6' },
+      { id: 'expert_2', name: 'Dr. Aisha Patel', roleType: 'expert', title: 'Cognitive Science Professor', stance: 'Human-AI collaboration offers the best path forward for society.', color: '#10B981' },
     ];
   }
 };
