@@ -128,7 +128,7 @@ export default function App() {
       setIsTyping(false);
       turnInProgressRef.current = false;
     });
-  }, [isTyping, thinkingSpeakerId, openingSpeakerIndex]);
+  }, [isTyping, thinkingSpeakerId, openingSpeakerIndex, appState]);
 
   // Effect for discussion phase
   useEffect(() => {
@@ -190,7 +190,7 @@ export default function App() {
         setIsTyping(false);
         turnInProgressRef.current = false;
       });
-  }, [isTyping, thinkingSpeakerId, autoDebateCount]);
+  }, [isTyping, thinkingSpeakerId, autoDebateCount, appState]);
 
 
   // --- HANDLERS ---
@@ -265,6 +265,8 @@ export default function App() {
     setAutoDebateCount(0);
     // Randomly assign 1-3 turns before returning to host
     setCurrentRoundLimit(Math.floor(Math.random() * 3) + 1);
+    // Kick off the next discussion turn
+    turnInProgressRef.current = true;
   };
 
   const handleSummarize = async () => {
