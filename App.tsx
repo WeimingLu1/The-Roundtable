@@ -52,8 +52,13 @@ export default function App() {
 
   // --- DISCUSSION LOOP ---
   useEffect(() => {
+    // Guards - must be outside state capture
     if (stateRef.current.isWaitingForUser || stateRef.current.isSummarizing) return;
     if (isTyping || thinkingSpeakerId || turnInProgressRef.current) return;
+
+    // Check turnInProgress BEFORE starting to prevent race conditions
+    if (turnInProgressRef.current) return;
+    turnInProgressRef.current = true;
 
     // Abort any in-flight request from previous run
     abortControllerRef.current?.abort();
@@ -63,6 +68,12 @@ export default function App() {
 
     // Use state snapshot captured at effect start to avoid stale closures
     const { appState: currentAppState, topic: currentTopic, participants: currentParticipants, messages: currentMessages, userContext: currentUserContext, autoDebateCount: currentAutoDebateCount, currentRoundLimit: currentRoundLimitVal, openingSpeakerIndex: currentOpeningSpeakerIndex } = stateRef.current;
+
+    // Cleanup: abort request on re-run or unmount
+    return () => {
+      abortController.abort();
+    };
+  }, [isTyping, thinkingSpeakerId, appState]);
 
     // 1. OPENING STATEMENTS PHASE
     if (currentAppState === AppState.OPENING_STATEMENTS) {
