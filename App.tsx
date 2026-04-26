@@ -190,7 +190,7 @@ export default function App() {
         setIsTyping(false);
         turnInProgressRef.current = false;
       });
-  }, [isTyping, thinkingSpeakerId, autoDebateCount, appState]);
+  }, [isTyping, thinkingSpeakerId, autoDebateCount, isWaitingForUser, appState]);
 
 
   // --- HANDLERS ---
