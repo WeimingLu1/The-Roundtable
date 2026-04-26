@@ -192,24 +192,14 @@ export default function App() {
       if (!userContext) return;
       setUpdatingParticipantId(id);
 
-      // Store timeout ID so we can clear it
+      // AbortController for canceling the API call
+      const abortController = new AbortController();
       const timeoutId = setTimeout(() => {
-        console.warn("Participant swap timed out after 8 seconds");
+        abortController.abort();
       }, 8000);
 
       try {
-          const apiPromise = generateSingleParticipant(inputQuery, topic, userContext);
-
-          const details = await Promise.race([
-            apiPromise,
-            new Promise<never>((_, reject) => {
-              const t = setTimeout(() => reject(new Error('Timeout')), 8000);
-              // Store timeout reference for cleanup - we'll clean this up via Promise.race settling
-              // Note: we can't actually clear this timeout since Promise.race doesn't expose cleanup
-              // This is a known limitation, but the outer timeoutId above fires and we log a warning
-              return t;
-            })
-          ]);
+          const details = await generateSingleParticipant(inputQuery, topic, userContext);
 
           setParticipants(prev => prev.map(p => {
               if (p.id === id) {

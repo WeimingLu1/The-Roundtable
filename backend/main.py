@@ -1,5 +1,6 @@
 import os
 import anthropic
+import openai
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -16,14 +17,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize Minimax client
+# Initialize OpenAI client (compatible with MiniMax via OpenRouter)
 api_key = os.environ.get("ANTHROPIC_API_KEY")
 if not api_key:
     raise ValueError("ANTHROPIC_API_KEY environment variable is required")
 
-client = anthropic.Anthropic(
+# Use OpenAI SDK with OpenRouter-compatible endpoint for MiniMax
+openai_client = openai.OpenAI(
     api_key=api_key,
-    base_url="https://api.minimaxi.com/anthropic"
+    base_url="https://api.minimaxi.com/anthropic/v1"  # MiniMax Chinese endpoint
 )
 
 MODEL = "MiniMax-M2.1"
@@ -100,19 +102,16 @@ class GenerateSummaryRequest(BaseModel):
 def get_ai_response(prompt: str, json_mode: bool = False) -> str:
     extra_kwargs = {}
     if json_mode:
-        extra_kwargs["system"] = "You must respond with valid JSON only. No markdown, no explanation."
+        extra_kwargs["response_format"] = {"type": "json_object"}
+        prompt = prompt + "\n\nYou must respond with valid JSON only. No markdown, no explanation."
 
-    message = client.messages.create(
-        model=MODEL,
+    message = openai_client.chat.completions.create(
+        model="MiniMax-M2.1",
         max_tokens=1024,
         messages=[{"role": "user", "content": prompt}],
-        thinking={"type": "low"},
         **extra_kwargs
     )
-    for block in message.content:
-        if hasattr(block, 'text') and block.text:
-            return block.text
-    return ""
+    return message.choices[0].message.content or ""
 
 
 # --- Endpoints ---
@@ -208,6 +207,10 @@ def predict_next_speaker(req: PredictNextSpeakerRequest):
     last_text = last_message.text if last_message else ""
     is_host_last = last_message.senderId == "user" if last_message else False
 
+    # Guard against empty participants list
+    if not req.participants:
+        return {"speakerId": "user"}
+
     # Check @Mentions
     for p in req.participants:
         if f"@{p.name}" in last_text:
@@ -255,8 +258,11 @@ Return ONLY the ID (e.g., expert_1).
         if valid:
             return {"speakerId": valid}
         other_speakers = [p for p in req.participants if p.id != last_message.senderId]
-        import random
-        return {"speakerId": random.choice(other_speakers).id}
+        if other_speakers:
+            import random
+            return {"speakerId": random.choice(other_speakers).id}
+        # Fallback: return any participant if other_speakers is empty
+        return {"speakerId": req.participants[0].id}
     except Exception as e:
         return {"speakerId": req.participants[0].id}
 
