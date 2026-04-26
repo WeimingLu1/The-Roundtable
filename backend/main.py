@@ -26,6 +26,9 @@ if not api_key:
 MODEL = "MiniMax-M2.7"
 MINIMAX_BASE_URL = "https://api.minimaxi.com/anthropic/v1/messages"
 
+# Reuse a single httpx client for connection pooling
+http_client = httpx.Client(timeout=60.0)
+
 AVATAR_COLORS = [
     '#EF4444', '#F97316', '#F59E0B', '#10B981', '#06B6D4',
     '#3B82F6', '#6366F1', '#8B5CF6', '#EC4899', '#84CC16'
@@ -113,10 +116,9 @@ def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int = 1024
         data["extra_body"]["response_format"] = {"type": "json_object"}
         data["messages"] = [{"role": "user", "content": prompt.rstrip() + "\n\nRespond with ONLY valid JSON. No explanation, no markdown."}]
 
-    with httpx.Client(timeout=60.0) as client:
-        response = client.post(MINIMAX_BASE_URL, json=data, headers=headers)
-        response.raise_for_status()
-        result = response.json()
+    response = http_client.post(MINIMAX_BASE_URL, json=data, headers=headers)
+    response.raise_for_status()
+    result = response.json()
 
     # Extract text from response
     content = result.get("content", [])
@@ -289,7 +291,7 @@ Output: Just the spoken text. No labels.
         try:
             text = get_ai_response(prompt)
             return {"text": text.strip(), "stance": "NEUTRAL", "stanceIntensity": 3, "shouldWaitForUser": False}
-        except:
+        except Exception:
             return {"text": "Hello.", "stance": "NEUTRAL", "stanceIntensity": 3, "shouldWaitForUser": False}
 
     # Discussion turn
@@ -388,6 +390,7 @@ Action is "WAIT" if force yielding, otherwise "CONTINUE".
             "shouldWaitForUser": should_wait
         }
     except Exception as e:
+        print(f"Error generating turn: {e}")
         return {"text": "...", "stance": "NEUTRAL", "stanceIntensity": 3, "shouldWaitForUser": True}
 
 

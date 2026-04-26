@@ -7,15 +7,22 @@ const AVATAR_COLORS = [
   '#3B82F6', '#6366F1', '#8B5CF6', '#EC4899', '#84CC16'
 ];
 
+// Reuse a single AbortController for API calls
+let sharedAbortController: AbortController | null = null;
+
 async function apiCall<T>(endpoint: string, body: any, timeoutMs: number = 30000): Promise<T> {
+  // Abort any previous in-flight request
+  sharedAbortController?.abort();
   const controller = new AbortController();
+  sharedAbortController = controller;
+
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(`${API_BASE}${endpoint}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      signal: controller.signal,
+      signal: controller.signal, // Now properly connected
     });
     clearTimeout(timeoutId);
     if (!response.ok) {

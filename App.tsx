@@ -51,10 +51,11 @@ export default function App() {
   }, [messages, thinkingSpeakerId, isTyping, isWaitingForUser, scrollToBottom]);
 
   // --- DISCUSSION LOOP ---
+  // Single effect that handles all discussion state machine transitions
   useEffect(() => {
     // Guards - must be outside state capture
     if (stateRef.current.isWaitingForUser || stateRef.current.isSummarizing) return;
-    if (isTyping || thinkingSpeakerId || turnInProgressRef.current) return;
+    if (isTyping || thinkingSpeakerId) return;
 
     // Check turnInProgress BEFORE starting to prevent race conditions
     if (turnInProgressRef.current) return;
@@ -64,120 +65,130 @@ export default function App() {
     abortControllerRef.current?.abort();
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
-    let aborted = false;
 
     // Use state snapshot captured at effect start to avoid stale closures
     const { appState: currentAppState, topic: currentTopic, participants: currentParticipants, messages: currentMessages, userContext: currentUserContext, autoDebateCount: currentAutoDebateCount, currentRoundLimit: currentRoundLimitVal, openingSpeakerIndex: currentOpeningSpeakerIndex } = stateRef.current;
 
-    // Cleanup: abort request on re-run or unmount
+    // Cleanup: abort request and reset turnInProgress on re-run or unmount
     return () => {
       abortController.abort();
+      turnInProgressRef.current = false;
     };
-  }, [isTyping, thinkingSpeakerId, appState]);
+  }, [isTyping, thinkingSpeakerId, appState, isWaitingForUser, isSummarizing, openingSpeakerIndex, autoDebateCount]);
 
-    // 1. OPENING STATEMENTS PHASE
-    if (currentAppState === AppState.OPENING_STATEMENTS) {
-      if (currentOpeningSpeakerIndex < currentParticipants.length) {
-        const speaker = currentParticipants[currentOpeningSpeakerIndex];
+  // Effect for opening statements phase
+  useEffect(() => {
+    if (stateRef.current.appState !== AppState.OPENING_STATEMENTS) return;
+    if (stateRef.current.isWaitingForUser || stateRef.current.isSummarizing) return;
+    if (isTyping || thinkingSpeakerId) return;
+    if (!turnInProgressRef.current) return; // Coordinator hasn't set up yet
 
-        if (!currentUserContext) return;
+    const { participants: currentParticipants, topic: currentTopic, messages: currentMessages, userContext: currentUserContext } = stateRef.current;
+    const currentOpeningSpeakerIndex = stateRef.current.openingSpeakerIndex;
 
-        setThinkingSpeakerId(speaker.id);
-        setIsTyping(true);
-        turnInProgressRef.current = true;
+    if (currentOpeningSpeakerIndex >= currentParticipants.length) {
+      setAppState(AppState.DISCUSSION);
+      setIsWaitingForUser(true);
+      turnInProgressRef.current = false;
+      return;
+    }
 
-        generateTurnForSpeaker(
-          speaker.id,
+    const speaker = currentParticipants[currentOpeningSpeakerIndex];
+    if (!currentUserContext) {
+      turnInProgressRef.current = false;
+      return;
+    }
+
+    setThinkingSpeakerId(speaker.id);
+    setIsTyping(true);
+
+    generateTurnForSpeaker(
+      speaker.id,
+      currentTopic,
+      currentParticipants,
+      currentMessages,
+      currentUserContext,
+      0, 0, true
+    ).then(result => {
+      const newMessage: Message = {
+        id: Date.now().toString(),
+        senderId: speaker.id,
+        text: result.text,
+        stance: result.stance,
+        stanceIntensity: result.stanceIntensity,
+        timestamp: Date.now()
+      };
+      setMessages(prev => [...prev, newMessage]);
+      setOpeningSpeakerIndex(prev => prev + 1);
+    }).catch(e => {
+      console.error('Opening statement error:', e);
+    }).finally(() => {
+      setThinkingSpeakerId(null);
+      setIsTyping(false);
+      // Don't reset turnInProgressRef here - let the coordinator handle it
+    });
+  }, [isTyping, thinkingSpeakerId, openingSpeakerIndex]);
+
+  // Effect for discussion phase
+  useEffect(() => {
+    if (stateRef.current.appState !== AppState.DISCUSSION) return;
+    if (stateRef.current.isWaitingForUser || stateRef.current.isSummarizing) return;
+    if (isTyping || thinkingSpeakerId) return;
+    if (!turnInProgressRef.current) return; // Coordinator hasn't set up yet
+
+    const { topic: currentTopic, participants: currentParticipants, messages: currentMessages, userContext: currentUserContext, autoDebateCount: currentAutoDebateCount, currentRoundLimit: currentRoundLimitVal } = stateRef.current;
+
+    if (!currentUserContext) {
+      turnInProgressRef.current = false;
+      return;
+    }
+
+    setIsTyping(true);
+
+    predictNextSpeaker(currentTopic, currentParticipants, currentMessages, currentUserContext, currentAutoDebateCount)
+      .then(async nextSpeakerId => {
+        setThinkingSpeakerId(nextSpeakerId);
+        const result = await generateTurnForSpeaker(
+          nextSpeakerId,
           currentTopic,
           currentParticipants,
           currentMessages,
           currentUserContext,
-          0, 0, true
-        ).then(result => {
-          if (aborted) return;
-          const newMessage: Message = {
-            id: Date.now().toString(),
-            senderId: speaker.id,
-            text: result.text,
-            stance: result.stance,
-            stanceIntensity: result.stanceIntensity,
-            timestamp: Date.now()
-          };
-          setMessages(prev => [...prev, newMessage]);
-          setOpeningSpeakerIndex(prev => prev + 1);
-        }).catch(e => {
-          console.error('Opening statement error:', e);
-        }).finally(() => {
-          if (!aborted) {
-            setThinkingSpeakerId(null);
-            setIsTyping(false);
-            turnInProgressRef.current = false;
-          }
-        });
-      } else {
-        setAppState(AppState.DISCUSSION);
-        setIsWaitingForUser(true);
-      }
-      return;
-    }
+          currentAutoDebateCount,
+          currentRoundLimitVal,
+          false
+        );
+        return { nextSpeakerId, result };
+      })
+      .then(({ nextSpeakerId, result }) => {
+        if (!result) return;
+        const newMessage: Message = {
+          id: Date.now().toString(),
+          senderId: nextSpeakerId || '',
+          text: result.text,
+          stance: result.stance,
+          stanceIntensity: result.stanceIntensity,
+          timestamp: Date.now()
+        };
 
-    // 2. NORMAL DISCUSSION PHASE
-    if (currentAppState === AppState.DISCUSSION) {
-      turnInProgressRef.current = true;
+        setMessages(prev => [...prev, newMessage]);
 
-      if (!currentUserContext) {
-        turnInProgressRef.current = false;
-        return;
-      }
-
-      predictNextSpeaker(currentTopic, currentParticipants, currentMessages, currentUserContext, currentAutoDebateCount)
-        .then(nextSpeakerId => {
-          if (aborted) return null;
-          setThinkingSpeakerId(nextSpeakerId);
-          setIsTyping(true);
-          return generateTurnForSpeaker(
-            nextSpeakerId,
-            currentTopic,
-            currentParticipants,
-            currentMessages,
-            currentUserContext,
-            currentAutoDebateCount,
-            currentRoundLimitVal,
-            false
-          );
-        })
-        .then(result => {
-          if (aborted || !result) return;
-          const newMessage: Message = {
-            id: Date.now().toString(),
-            senderId: thinkingSpeakerId || '',
-            text: result.text,
-            stance: result.stance,
-            stanceIntensity: result.stanceIntensity,
-            timestamp: Date.now()
-          };
-
-          setMessages(prev => [...prev, newMessage]);
-
-          if (result.shouldWaitForUser) {
-            setIsWaitingForUser(true);
-            setAutoDebateCount(0);
-          } else {
-            setAutoDebateCount(prev => prev + 1);
-          }
-        })
-        .catch(e => {
-          console.error('Discussion turn error:', e);
-        })
-        .finally(() => {
-          if (!aborted) {
-            setThinkingSpeakerId(null);
-            setIsTyping(false);
-            turnInProgressRef.current = false;
-          }
-        });
-    }
-  }, [isTyping, thinkingSpeakerId]);
+        if (result.shouldWaitForUser) {
+          setIsWaitingForUser(true);
+          setAutoDebateCount(0);
+        } else {
+          setAutoDebateCount(prev => prev + 1);
+        }
+      })
+      .catch(e => {
+        console.error('Discussion turn error:', e);
+      })
+      .finally(() => {
+        setThinkingSpeakerId(null);
+        setIsTyping(false);
+        // Don't reset turnInProgressRef here - let the coordinator handle it
+      });
+  }, [isTyping, thinkingSpeakerId, autoDebateCount]);
 
 
   // --- HANDLERS ---

@@ -52,8 +52,8 @@ ${summary.questions.map(q => `- ${q}`).join('\n')}
               <div className="space-y-3">
                 {summary.core_viewpoints.map((item, i) => (
                   <div key={i} className="bg-md-surface-container-low p-3 rounded-xl border border-white/5 shadow-sm">
-                    <span className="block text-xs font-bold text-md-secondary mb-1">{item.speaker}</span>
-                    <p className="text-sm text-md-primary leading-relaxed">{item.point}</p>
+                    <span className="block text-xs font-bold text-md-secondary mb-1">{item?.speaker ?? 'Unknown'}</span>
+                    <p className="text-sm text-md-primary leading-relaxed">{item?.point ?? ''}</p>
                   </div>
                 ))}
               </div>
@@ -67,7 +67,7 @@ ${summary.questions.map(q => `- ${q}`).join('\n')}
                 {summary.questions.map((item, i) => (
                   <li key={i} className="flex gap-2 text-md-secondary text-sm">
                     <span className="text-md-accent font-bold">?</span>
-                    {item}
+                    {item ?? ''}
                   </li>
                 ))}
               </ul>

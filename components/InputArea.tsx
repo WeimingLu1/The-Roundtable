@@ -70,19 +70,19 @@ export const InputArea: React.FC<InputAreaProps> = ({
     `}>
       
       {/* Mention Popup */}
-      {showMentionPopup && !disabled && (
+      {showMentionPopup && !disabled && participants.length > 0 && (
         <div className="absolute bottom-24 left-4 bg-md-surface-container rounded-xl shadow-elevation-3 overflow-hidden min-w-[180px] animate-fade-in-up border border-white/10">
             <div className="px-4 py-2 bg-md-surface-container-low text-xs font-bold text-md-secondary">Mention Guest</div>
             {participants.map(p => (
                 <button
                     key={p.id}
-                    onClick={() => insertMention(p.name)}
+                    onClick={() => insertMention(p.name || 'Guest')}
                     className="w-full text-left px-4 py-3 hover:bg-white/5 flex items-center gap-3 transition-colors"
                 >
                     <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] text-white font-bold" style={{backgroundColor: p.color}}>
-                        {p.name[0]}
+                        {p.name?.[0] ?? '?'}
                     </div>
-                    <span className="font-medium text-md-primary">{p.name}</span>
+                    <span className="font-medium text-md-primary">{p.name || 'Guest'}</span>
                 </button>
             ))}
         </div>
