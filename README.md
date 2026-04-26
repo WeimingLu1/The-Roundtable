@@ -1,6 +1,6 @@
 # The Roundtable (圆桌) 🎙️
 
-**The Roundtable (圆桌)** 是一个基于 Google Gemini AI 驱动的高品质智力讨论平台。它模拟了一个高端学术沙龙或跨学科辩论赛，允许用户作为“主持人”与多位 AI 模拟的世界级专家进行深度思想碰撞。
+**The Roundtable (圆桌)** 是一个基于 MiniMax M2.7 AI 驱动的高品质智力讨论平台。它模拟了一个高端学术沙龙或跨学科辩论赛，允许用户作为"主持人"与多位 AI 模拟的世界级专家进行深度思想碰撞。
 
 ---
 
@@ -58,9 +58,10 @@
 ## 📖 使用方法 (How to Use)
 
 ### 1. 环境准备
-确保你拥有 Google Gemini API Key。在 `.env` 文件中配置：
+确保你拥有 MiniMax API Key。在 `.env` 文件中配置：
+
 ```env
-GEMINI_API_KEY=你的密钥
+ANTHROPIC_API_KEY=***
 ```
 
 ### 2. 交互指南
@@ -84,11 +85,20 @@ npm run build
 
 ## 📂 目录结构说明
 
-*   `/services/geminiService.ts`: 所有的 AI 交互逻辑，包括提示词模板和 API 调用。
+*   `/services/`: AI 服务层
+    *   `geminiService.ts`: AI 交互逻辑（前端调用后端）
+    *   `backend/main.py`: MiniMax M2.7 API 后端服务（FastAPI）
 *   `/App.tsx`: 顶层状态机，控制讨论的阶段切换。
 *   `/components/`: 纯 UI 组件，负责气泡渲染、卡片展示等。
 *   `/types.ts`: 定义了整个系统的核心数据模型。
 
+### 后端启动
+
+```bash
+cd backend
+python -m uvicorn main:app --host 0.0.0.0 --port 3001
+```
+
 ---
 
-*本项目由 Google AI Studio Build 驱动，旨在探索生成式 AI 在模拟复杂人类社交与智力互动中的潜力。*
+*本项目探索生成式 AI 在模拟复杂人类社交与智力互动中的潜力。*
