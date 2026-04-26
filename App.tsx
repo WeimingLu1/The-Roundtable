@@ -126,7 +126,7 @@ export default function App() {
     }).finally(() => {
       setThinkingSpeakerId(null);
       setIsTyping(false);
-      // Don't reset turnInProgressRef here - let the coordinator handle it
+      turnInProgressRef.current = false;
     });
   }, [isTyping, thinkingSpeakerId, openingSpeakerIndex]);
 
@@ -188,7 +188,7 @@ export default function App() {
       .finally(() => {
         setThinkingSpeakerId(null);
         setIsTyping(false);
-        // Don't reset turnInProgressRef here - let the coordinator handle it
+        turnInProgressRef.current = false;
       });
   }, [isTyping, thinkingSpeakerId, autoDebateCount]);
 

@@ -87,7 +87,7 @@ npm run build
 
 *   `/services/`: AI 服务层
     *   `geminiService.ts`: AI 交互逻辑（前端调用后端）
-    *   `backend/main.py`: MiniMax M2.7 API 后端服务（FastAPI）
+    *   `backend/main.py`: MiniMax M2 API 后端服务（FastAPI）
 *   `/App.tsx`: 顶层状态机，控制讨论的阶段切换。
 *   `/components/`: 纯 UI 组件，负责气泡渲染、卡片展示等。
 *   `/types.ts`: 定义了整个系统的核心数据模型。
