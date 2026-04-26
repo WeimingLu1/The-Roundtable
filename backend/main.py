@@ -1,6 +1,5 @@
 import os
-import anthropic
-import openai
+import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -17,18 +16,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize OpenAI client (compatible with MiniMax via OpenRouter)
+# Initialize MiniMax API client
 api_key = os.environ.get("ANTHROPIC_API_KEY")
 if not api_key:
     raise ValueError("ANTHROPIC_API_KEY environment variable is required")
 
-# Use OpenAI SDK with OpenRouter-compatible endpoint for MiniMax
-openai_client = openai.OpenAI(
-    api_key=api_key,
-    base_url="https://api.minimaxi.com/anthropic/v1"  # MiniMax Chinese endpoint
-)
-
-MODEL = "MiniMax-M2.1"
+MODEL = "MiniMax-M2.7"
+MINIMAX_BASE_URL = "https://api.minimaxi.com/anthropic/v1/messages"
 
 AVATAR_COLORS = [
     '#EF4444', '#F97316', '#F59E0B', '#10B981', '#06B6D4',
@@ -100,18 +94,45 @@ class GenerateSummaryRequest(BaseModel):
 
 # --- Helper ---
 def get_ai_response(prompt: str, json_mode: bool = False) -> str:
-    extra_kwargs = {}
+    extra_headers = {}
     if json_mode:
-        extra_kwargs["response_format"] = {"type": "json_object"}
+        extra_headers["extra_body"] = {"response_format": {"type": "json_object"}}
         prompt = prompt + "\n\nYou must respond with valid JSON only. No markdown, no explanation."
 
-    message = openai_client.chat.completions.create(
-        model="MiniMax-M2.1",
-        max_tokens=1024,
-        messages=[{"role": "user", "content": prompt}],
-        **extra_kwargs
-    )
-    return message.choices[0].message.content or ""
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "anthropic-version": "2023-06-01"
+    }
+
+    data = {
+        "model": MODEL,
+        "max_tokens": 1024,
+        "messages": [{"role": "user", "content": prompt}]
+    }
+
+    if json_mode:
+        data["extra_body"] = {"response_format": {"type": "json_object"}}
+
+    with httpx.Client(timeout=60.0) as client:
+        response = client.post(MINIMAX_BASE_URL, json=data, headers=headers)
+        response.raise_for_status()
+        result = response.json()
+
+    # Extract text from response
+    content = result.get("content", [])
+    for block in content:
+        if block.get("type") == "text":
+            text_result = block.get("text", "").strip()
+            # Remove markdown code fences if present
+            if text_result.startswith("```"):
+                lines = text_result.split("\n")
+                text_result = "\n".join(lines[1:])
+                if text_result.endswith("```"):
+                    text_result = text_result[:-3]
+                text_result = text_result.strip()
+            return text_result
+    return ""
 
 
 # --- Endpoints ---
@@ -146,11 +167,14 @@ Return JSON: {{ "participants": [{{ "name": "string", "title": "string", "stance
 """
     try:
         text = get_ai_response(prompt, json_mode=True)
+        print(f"DEBUG generate_panel: got text={text[:100]!r}")
         import json
         data = json.loads(text)
         participants = data.get("participants", [])
     except Exception as e:
+        import traceback
         print(f"Error generating panel: {e}")
+        traceback.print_exc()
         participants = [
             {"name": "Sam Altman", "title": "CEO of OpenAI", "stance": "AI will elevate humanity."},
             {"name": "Yuval Noah Harari", "title": "Historian & Author", "stance": "Algorithms may hack humans."},
