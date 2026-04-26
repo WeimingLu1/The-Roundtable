@@ -45,50 +45,53 @@ export default function App() {
   // --- DISCUSSION LOOP ---
   useEffect(() => {
     if (isWaitingForUser || isSummarizing) return;
+    if (isTyping || thinkingSpeakerId || turnInProgressRef.current) return;
 
-    // Cancel any in-flight request
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    abortControllerRef.current = new AbortController();
+    let aborted = false;
 
     // 1. OPENING STATEMENTS PHASE
     if (appState === AppState.OPENING_STATEMENTS) {
-      if (isTyping || thinkingSpeakerId || turnInProgressRef.current) return;
       if (openingSpeakerIndex < participants.length) {
         const speaker = participants[openingSpeakerIndex];
+        const currentTopic = topic;
+        const currentParticipants = participants;
+        const currentMessages = messages;
+        const currentUserContext = userContext;
+
+        if (!currentUserContext) return;
+
         setThinkingSpeakerId(speaker.id);
         setIsTyping(true);
         turnInProgressRef.current = true;
 
-        (async () => {
-          try {
-            const result = await generateTurnForSpeaker(
-              speaker.id,
-              topic,
-              participants,
-              messages,
-              userContext!,
-              0, 0, true
-            );
-            const newMessage: Message = {
-              id: Date.now().toString(),
-              senderId: speaker.id,
-              text: result.text,
-              stance: result.stance,
-              stanceIntensity: result.stanceIntensity,
-              timestamp: Date.now()
-            };
-            setMessages(prev => [...prev, newMessage]);
-            setOpeningSpeakerIndex(prev => prev + 1);
-          } catch (e) {
-            console.error('Opening statement error:', e);
-          } finally {
+        generateTurnForSpeaker(
+          speaker.id,
+          currentTopic,
+          currentParticipants,
+          currentMessages,
+          currentUserContext,
+          0, 0, true
+        ).then(result => {
+          if (aborted) return;
+          const newMessage: Message = {
+            id: Date.now().toString(),
+            senderId: speaker.id,
+            text: result.text,
+            stance: result.stance,
+            stanceIntensity: result.stanceIntensity,
+            timestamp: Date.now()
+          };
+          setMessages(prev => [...prev, newMessage]);
+          setOpeningSpeakerIndex(prev => prev + 1);
+        }).catch(e => {
+          console.error('Opening statement error:', e);
+        }).finally(() => {
+          if (!aborted) {
             setThinkingSpeakerId(null);
             setIsTyping(false);
             turnInProgressRef.current = false;
           }
-        })();
+        });
       } else {
         setAppState(AppState.DISCUSSION);
         setIsWaitingForUser(true);
@@ -98,31 +101,41 @@ export default function App() {
 
     // 2. NORMAL DISCUSSION PHASE
     if (appState === AppState.DISCUSSION) {
-      if (isTyping || thinkingSpeakerId || turnInProgressRef.current) return;
-
       turnInProgressRef.current = true;
 
-      const processNextTurn = async () => {
-        try {
-          const nextSpeakerId = await predictNextSpeaker(topic, participants, messages, userContext!, autoDebateCount);
+      const currentTopic = topic;
+      const currentParticipants = participants;
+      const currentMessages = messages;
+      const currentUserContext = userContext;
+      const currentAutoDebateCount = autoDebateCount;
+      const currentRoundLimitVal = currentRoundLimit;
 
+      if (!currentUserContext) {
+        turnInProgressRef.current = false;
+        return;
+      }
+
+      predictNextSpeaker(currentTopic, currentParticipants, currentMessages, currentUserContext, currentAutoDebateCount)
+        .then(nextSpeakerId => {
+          if (aborted) return null;
           setThinkingSpeakerId(nextSpeakerId);
           setIsTyping(true);
-
-          const result = await generateTurnForSpeaker(
+          return generateTurnForSpeaker(
             nextSpeakerId,
-            topic,
-            participants,
-            messages,
-            userContext!,
-            autoDebateCount,
-            currentRoundLimit,
+            currentTopic,
+            currentParticipants,
+            currentMessages,
+            currentUserContext,
+            currentAutoDebateCount,
+            currentRoundLimitVal,
             false
           );
-
+        })
+        .then(result => {
+          if (aborted || !result) return;
           const newMessage: Message = {
             id: Date.now().toString(),
-            senderId: nextSpeakerId,
+            senderId: thinkingSpeakerId || '',
             text: result.text,
             stance: result.stance,
             stanceIntensity: result.stanceIntensity,
@@ -137,23 +150,18 @@ export default function App() {
           } else {
             setAutoDebateCount(prev => prev + 1);
           }
-        } catch (e) {
+        })
+        .catch(e => {
           console.error('Discussion turn error:', e);
-        } finally {
-          setThinkingSpeakerId(null);
-          setIsTyping(false);
-          turnInProgressRef.current = false;
-        }
-      };
-
-      processNextTurn();
+        })
+        .finally(() => {
+          if (!aborted) {
+            setThinkingSpeakerId(null);
+            setIsTyping(false);
+            turnInProgressRef.current = false;
+          }
+        });
     }
-
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
   }, [messages, appState, isWaitingForUser, openingSpeakerIndex, participants, isSummarizing, autoDebateCount, userContext, topic, currentRoundLimit, isTyping, thinkingSpeakerId]);
 
 

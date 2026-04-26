@@ -143,11 +143,11 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, sender, partici
   };
 
   const initials = sender?.name
-    .split(' ')
+    ?.split(' ')
     .map(n => n[0])
     .join('')
     .substring(0, 2)
-    .toUpperCase();
+    .toUpperCase() || '??';
 
   if (isUser) {
     return (

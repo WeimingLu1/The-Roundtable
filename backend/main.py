@@ -17,8 +17,12 @@ app.add_middleware(
 )
 
 # Initialize Minimax client
+api_key = os.environ.get("ANTHROPIC_API_KEY")
+if not api_key:
+    raise ValueError("ANTHROPIC_API_KEY environment variable is required")
+
 client = anthropic.Anthropic(
-    api_key=os.environ.get("ANTHROPIC_API_KEY", "sk-cp-_zO8koHVsrQsklDEjzWhR7q2eJXkvzDyPRQX91ETMy5KfjxtgcFOX2q89uqmBmp08flMu-4GnnXdTFuCaFtlxjB0ePCj-5qd7DIxSAXErPKt3FO9GdelHxk"),
+    api_key=api_key,
     base_url="https://api.minimaxi.com/anthropic"
 )
 
