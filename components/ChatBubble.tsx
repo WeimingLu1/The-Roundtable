@@ -13,7 +13,10 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, sender, partici
   const isUser = message.senderId === 'user';
 
   const sortedNames = useMemo(
-    () => participants.map(p => p.name).sort((a, b) => b.length - a.length),
+    () => {
+      if (!participants || participants.length === 0) return [];
+      return participants.map(p => p.name).sort((a, b) => b.length - a.length);
+    },
     [participants]
   );
 
@@ -142,9 +145,9 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, sender, partici
     );
   };
 
-  const initials = sender?.name
-    ?.split(' ')
-    .map(n => n[0])
+  const initials = (sender?.name || '')
+    .split(' ')
+    .map(n => n[0] || '')
     .join('')
     .substring(0, 2)
     .toUpperCase() || '??';

@@ -20,13 +20,13 @@ export const ParticipantCard: React.FC<ParticipantCardProps> = ({
   const [isSwapping, setIsSwapping] = useState(false);
   const [swapName, setSwapName] = useState('');
 
-  // Generate Initials
-  const initials = participant.name
+  // Generate Initials - guard against empty name
+  const initials = (participant.name || '??')
     .split(' ')
-    .map(n => n[0])
+    .map(n => n[0] || '')
     .join('')
     .substring(0, 2)
-    .toUpperCase();
+    .toUpperCase() || '??';
 
   const handleSwapSubmit = () => {
       if (swapName.trim() && onReplace) {

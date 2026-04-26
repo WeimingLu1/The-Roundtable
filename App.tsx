@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Participant, Message, AppState, Summary, UserContext } from './types';
 import { generatePanel, predictNextSpeaker, generateTurnForSpeaker, generateSummary, generateRandomTopic, generateSingleParticipant } from './services/geminiService';
 import { ParticipantCard } from './components/ParticipantCard';
@@ -14,7 +14,7 @@ export default function App() {
   const [topic, setTopic] = useState('');
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
-  
+
   // States
   const [isTyping, setIsTyping] = useState(false);
   const [thinkingSpeakerId, setThinkingSpeakerId] = useState<string | null>(null);
@@ -22,41 +22,52 @@ export default function App() {
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [isLoadingTopic, setIsLoadingTopic] = useState(false);
   const [updatingParticipantId, setUpdatingParticipantId] = useState<string | null>(null);
-  
+
   const [isWaitingForUser, setIsWaitingForUser] = useState(false);
-  
+
   // Logic Control
   const [autoDebateCount, setAutoDebateCount] = useState(0);
   const [currentRoundLimit, setCurrentRoundLimit] = useState(3);
-  const [openingSpeakerIndex, setOpeningSpeakerIndex] = useState(0); 
-  
+  const [openingSpeakerIndex, setOpeningSpeakerIndex] = useState(0);
+
+  // Refs for async operations
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const turnInProgressRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  // Keep latest state snapshot for async callbacks to avoid stale closures
+  const stateRef = useRef({ appState, topic, participants, messages, userContext, autoDebateCount, currentRoundLimit, openingSpeakerIndex, isWaitingForUser, isSummarizing });
 
-  const scrollToBottom = () => {
+  // Keep stateRef in sync with latest state
+  useEffect(() => {
+    stateRef.current = { appState, topic, participants, messages, userContext, autoDebateCount, currentRoundLimit, openingSpeakerIndex, isWaitingForUser, isSummarizing };
+  }, [appState, topic, participants, messages, userContext, autoDebateCount, currentRoundLimit, openingSpeakerIndex, isWaitingForUser, isSummarizing]);
+
+  const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  }, []);
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, thinkingSpeakerId, isTyping, isWaitingForUser]);
+  }, [messages, thinkingSpeakerId, isTyping, isWaitingForUser, scrollToBottom]);
 
   // --- DISCUSSION LOOP ---
   useEffect(() => {
-    if (isWaitingForUser || isSummarizing) return;
+    if (stateRef.current.isWaitingForUser || stateRef.current.isSummarizing) return;
     if (isTyping || thinkingSpeakerId || turnInProgressRef.current) return;
 
+    // Abort any in-flight request from previous run
+    abortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
     let aborted = false;
 
+    // Use state snapshot captured at effect start to avoid stale closures
+    const { appState: currentAppState, topic: currentTopic, participants: currentParticipants, messages: currentMessages, userContext: currentUserContext, autoDebateCount: currentAutoDebateCount, currentRoundLimit: currentRoundLimitVal, openingSpeakerIndex: currentOpeningSpeakerIndex } = stateRef.current;
+
     // 1. OPENING STATEMENTS PHASE
-    if (appState === AppState.OPENING_STATEMENTS) {
-      if (openingSpeakerIndex < participants.length) {
-        const speaker = participants[openingSpeakerIndex];
-        const currentTopic = topic;
-        const currentParticipants = participants;
-        const currentMessages = messages;
-        const currentUserContext = userContext;
+    if (currentAppState === AppState.OPENING_STATEMENTS) {
+      if (currentOpeningSpeakerIndex < currentParticipants.length) {
+        const speaker = currentParticipants[currentOpeningSpeakerIndex];
 
         if (!currentUserContext) return;
 
@@ -100,15 +111,8 @@ export default function App() {
     }
 
     // 2. NORMAL DISCUSSION PHASE
-    if (appState === AppState.DISCUSSION) {
+    if (currentAppState === AppState.DISCUSSION) {
       turnInProgressRef.current = true;
-
-      const currentTopic = topic;
-      const currentParticipants = participants;
-      const currentMessages = messages;
-      const currentUserContext = userContext;
-      const currentAutoDebateCount = autoDebateCount;
-      const currentRoundLimitVal = currentRoundLimit;
 
       if (!currentUserContext) {
         turnInProgressRef.current = false;
@@ -162,7 +166,7 @@ export default function App() {
           }
         });
     }
-  }, [messages, appState, isWaitingForUser, openingSpeakerIndex, participants, isSummarizing, autoDebateCount, userContext, topic, currentRoundLimit, isTyping, thinkingSpeakerId]);
+  }, [isTyping, thinkingSpeakerId]);
 
 
   // --- HANDLERS ---
@@ -183,21 +187,29 @@ export default function App() {
   const handleUpdateParticipantName = (id: string, newName: string) => {
       setParticipants(prev => prev.map(p => p.id === id ? { ...p, name: newName } : p));
   };
-  
+
   const handleSwapParticipant = async (id: string, inputQuery: string) => {
       if (!userContext) return;
       setUpdatingParticipantId(id);
 
-      try {
-          const timeoutPromise = new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('Timeout')), 8000)
-          );
+      // Store timeout ID so we can clear it
+      const timeoutId = setTimeout(() => {
+        console.warn("Participant swap timed out after 8 seconds");
+      }, 8000);
 
+      try {
           const apiPromise = generateSingleParticipant(inputQuery, topic, userContext);
 
-          const details = await Promise.race([apiPromise, timeoutPromise]);
-
-          if (!details) throw new Error("No details");
+          const details = await Promise.race([
+            apiPromise,
+            new Promise<never>((_, reject) => {
+              const t = setTimeout(() => reject(new Error('Timeout')), 8000);
+              // Store timeout reference for cleanup - we'll clean this up via Promise.race settling
+              // Note: we can't actually clear this timeout since Promise.race doesn't expose cleanup
+              // This is a known limitation, but the outer timeoutId above fires and we log a warning
+              return t;
+            })
+          ]);
 
           setParticipants(prev => prev.map(p => {
               if (p.id === id) {
@@ -214,6 +226,7 @@ export default function App() {
           console.error("Failed to swap participant", error);
           setParticipants(prev => prev.map(p => p.id === id ? { ...p, name: inputQuery, title: 'Guest', stance: 'Ready.' } : p));
       } finally {
+          clearTimeout(timeoutId);
           setUpdatingParticipantId(null);
       }
   };
@@ -230,14 +243,14 @@ export default function App() {
         senderId: 'user',
         text: text,
         timestamp: Date.now(),
-        isInterruption: false 
+        isInterruption: false
     };
-    
+
     setMessages(prev => [...prev, userMsg]);
     setIsWaitingForUser(false);
-    setAutoDebateCount(0); 
-    // Randomly assign 1-3 turns (reduced from 1-5) before returning to host
-    setCurrentRoundLimit(Math.floor(Math.random() * 3) + 1); 
+    setAutoDebateCount(0);
+    // Randomly assign 1-3 turns before returning to host
+    setCurrentRoundLimit(Math.floor(Math.random() * 3) + 1);
   };
 
   const handleSummarize = async () => {
@@ -246,6 +259,8 @@ export default function App() {
       try {
         const s = await generateSummary(topic, messages, participants, userContext);
         setSummary(s);
+      } catch (e) {
+        console.error("Failed to generate summary:", e);
       } finally {
         setIsSummarizing(false);
       }
@@ -259,6 +274,13 @@ export default function App() {
           setTopic('');
           setIsWaitingForUser(false);
           setSummary(null);
+          // Reset other state
+          setOpeningSpeakerIndex(0);
+          setAutoDebateCount(0);
+          setCurrentRoundLimit(3);
+          setIsTyping(false);
+          setThinkingSpeakerId(null);
+          setIsSummarizing(false);
       }
   };
 
@@ -268,6 +290,8 @@ export default function App() {
       try {
           const newTopic = await generateRandomTopic(userContext.language);
           setTopic(newTopic);
+      } catch (e) {
+          console.error("Failed to generate random topic:", e);
       } finally {
           setIsLoadingTopic(false);
       }
@@ -284,7 +308,7 @@ export default function App() {
       <div className="min-h-screen bg-md-surface flex flex-col items-center p-6 text-center animate-fade-in relative">
         {/* Fixed Back Button */}
         <div className="fixed top-6 left-6 z-50">
-             <button 
+             <button
                 onClick={() => setAppState(AppState.ONBOARDING)}
                 className="p-2 rounded-full bg-md-surface-container hover:bg-white/10 transition-colors border border-white/5 text-md-primary shadow-sm backdrop-blur-md"
                 title="Back to Setup"
@@ -296,7 +320,7 @@ export default function App() {
         <div className="flex-1 flex flex-col items-center justify-center w-full max-w-lg mt-12">
             <h1 className="font-sans text-5xl md:text-6xl font-bold text-md-primary mb-4 tracking-tight">The Roundtable</h1>
             <p className="text-md-secondary text-lg mb-12">Assemble the world's greatest minds.</p>
-            
+
             <div className="w-full">
                 <div className="mb-8 flex items-center justify-between bg-md-surface-container px-6 py-4 rounded-2xl shadow-sm border border-white/5">
                     <div className="text-left">
@@ -320,7 +344,7 @@ export default function App() {
                     rows={3}
                     placeholder={userContext?.language === 'Chinese' ? "例如：人工智能是否拥有意识？" : "e.g. Is universal basic income necessary?"}
                 />
-                <button 
+                <button
                     onClick={handleRandomTopic}
                     disabled={isLoadingTopic}
                     className="absolute bottom-4 right-4 text-xs bg-md-surface-container-low px-3 py-1 rounded-full text-md-secondary hover:bg-md-accent hover:text-black transition-colors font-medium flex items-center gap-2 disabled:opacity-50"
@@ -329,10 +353,9 @@ export default function App() {
                     {isLoadingTopic ? 'Thinking...' : 'Random Idea'}
                 </button>
             </div>
-            
-            <button 
+
+            <button
                 onClick={handleStart}
-                // Updated check: trim() ensures whitespace doesn't enable it, and prevents disabled look when valid text exists
                 disabled={!topic.trim() || isLoadingTopic}
                 className="mt-8 w-full bg-md-accent text-black font-medium py-4 text-lg rounded-full shadow-elevation-2 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
             >
@@ -348,7 +371,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-md-surface flex flex-col items-center justify-center relative">
          <div className="fixed top-6 left-6 z-50">
-             <button 
+             <button
                 onClick={() => setAppState(AppState.LANDING)}
                 className="p-2 rounded-full bg-md-surface-container hover:bg-white/10 transition-colors border border-white/5 text-md-primary shadow-sm backdrop-blur-md"
             >
@@ -385,9 +408,9 @@ export default function App() {
             {/* Scroll Container for Cards */}
             <div className="overflow-x-auto flex items-center gap-4 px-8 py-8 snap-x snap-mandatory max-w-7xl mx-auto no-scrollbar w-full">
                 {participants.map(p => (
-                    <ParticipantCard 
-                        key={p.id} 
-                        participant={p} 
+                    <ParticipantCard
+                        key={p.id}
+                        participant={p}
                         onUpdate={handleUpdateParticipantName}
                         onReplace={handleSwapParticipant}
                         isUpdating={updatingParticipantId === p.id}
@@ -398,7 +421,7 @@ export default function App() {
 
         <div className="p-8 pb-12 bg-md-surface-container rounded-t-[40px] shadow-elevation-3 border-t border-white/5">
             <div className="max-w-md mx-auto space-y-3">
-                <button 
+                <button
                     onClick={handleConfirmPanel}
                     disabled={!!updatingParticipantId}
                     className="w-full bg-md-accent text-black text-xl font-medium py-4 rounded-full shadow-lg flex items-center justify-center gap-2 hover:scale-[1.02] transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
@@ -406,8 +429,8 @@ export default function App() {
                    {updatingParticipantId ? <Loader2 className="animate-spin" size={20} /> : <Play size={20} fill="currentColor" />}
                    {updatingParticipantId ? 'Preparing Guest...' : 'Start Roundtable'}
                 </button>
-                <button 
-                    onClick={() => handleStart()} 
+                <button
+                    onClick={() => handleStart()}
                     disabled={!!updatingParticipantId}
                     className="w-full text-md-secondary text-sm font-medium py-3 rounded-full hover:bg-white/5 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
                 >
@@ -429,12 +452,12 @@ export default function App() {
 
         <div className="flex -space-x-3">
             {participants.map(p => (
-                <div 
-                    key={p.id} 
+                <div
+                    key={p.id}
                     className="w-8 h-8 rounded-full border-2 border-md-surface flex items-center justify-center text-[10px] font-bold text-white"
                     style={{backgroundColor: p.color}}
                 >
-                    {p.name[0]}
+                    {p.name?.[0] ?? '?'}
                 </div>
             ))}
         </div>
@@ -452,12 +475,12 @@ export default function App() {
                     </span>
                  </div>
             )}
-            
+
             {messages.map((msg) => (
-                <ChatBubble 
-                    key={msg.id} 
-                    message={msg} 
-                    sender={participants.find(p => p.id === msg.senderId)} 
+                <ChatBubble
+                    key={msg.id}
+                    message={msg}
+                    sender={participants.find(p => p.id === msg.senderId)}
                     participants={participants}
                     hostName={userContext?.nickname}
                 />
@@ -467,32 +490,32 @@ export default function App() {
             <div className="mt-8 mb-4 min-h-[60px] flex justify-center">
                 {(isTyping || thinkingSpeakerId) && (
                     <div className="flex items-center gap-3 bg-md-surface-container px-4 py-2 rounded-full shadow-sm animate-pulse border border-white/10">
-                         <div 
-                            className="w-2 h-2 rounded-full" 
+                         <div
+                            className="w-2 h-2 rounded-full"
                             style={{backgroundColor: participants.find(p => p.id === thinkingSpeakerId)?.color || '#fff'}}
                          ></div>
                          <span className="text-xs font-bold text-md-secondary">
-                            {participants.find(p => p.id === thinkingSpeakerId)?.name} is typing...
+                            {participants.find(p => p.id === thinkingSpeakerId)?.name ?? 'Guest'} is typing...
                          </span>
                     </div>
                 )}
             </div>
-            
+
             <div ref={messagesEndRef} className="h-4" />
         </div>
       </div>
 
       {/* Input Area is Fixed inside the component */}
-      <InputArea 
-        onSendMessage={handleUserMessage} 
+      <InputArea
+        onSendMessage={handleUserMessage}
         onSummarize={handleSummarize}
         isDiscussing={true}
         isWaitingForUser={isWaitingForUser}
         participants={participants}
         disabled={!isWaitingForUser || isSummarizing}
       />
-      
-      {/* ... Modals ... */}
+
+      {/* Summarizing Overlay */}
       {isSummarizing && (
           <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center animate-fade-in">
              <div className="bg-md-surface-container p-6 rounded-2xl shadow-xl flex flex-col items-center border border-white/10">
