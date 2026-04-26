@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { UserContext } from '../types';
-import { ArrowRight, LockKeyhole } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 
 interface OnboardingFormProps {
   onComplete: (context: UserContext) => void;
@@ -10,16 +10,9 @@ export const OnboardingForm: React.FC<OnboardingFormProps> = ({ onComplete }) =>
   const [nickname, setNickname] = useState('');
   const [identity, setIdentity] = useState('');
   const [language, setLanguage] = useState('Chinese');
-  const [inviteCode, setInviteCode] = useState('');
-  const [error, setError] = useState('');
 
   const handleSubmit = () => {
     if (!nickname.trim()) return;
-
-    if (inviteCode.trim() !== '123123') {
-        setError('Invalid invitation code. Access denied.');
-        return;
-    }
 
     onComplete({
       nickname: nickname.trim(),
@@ -37,24 +30,6 @@ export const OnboardingForm: React.FC<OnboardingFormProps> = ({ onComplete }) =>
         </div>
         
         <div className="space-y-6">
-          <div>
-            <label className="block text-xs font-bold text-md-outline uppercase tracking-wider mb-2 ml-1">Invitation Code</label>
-            <div className="relative">
-                <input 
-                type="text" 
-                value={inviteCode}
-                onChange={(e) => {
-                    setInviteCode(e.target.value);
-                    setError('');
-                }}
-                placeholder="Required to enter"
-                className={`w-full bg-md-surface-container-low border rounded-xl p-4 text-md-primary placeholder-gray-500 text-base focus:ring-2 focus:ring-md-accent/50 outline-none transition-all pl-10 ${error ? 'border-red-500/50 focus:ring-red-500/50' : 'border-transparent'}`}
-                />
-                <LockKeyhole size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
-            </div>
-            {error && <p className="text-red-400 text-xs mt-2 ml-1 font-medium animate-pulse">{error}</p>}
-          </div>
-
           <div>
             <label className="block text-xs font-bold text-md-outline uppercase tracking-wider mb-2 ml-1">Your Name</label>
             <input 
@@ -98,7 +73,7 @@ export const OnboardingForm: React.FC<OnboardingFormProps> = ({ onComplete }) =>
 
         <button 
           onClick={handleSubmit}
-          disabled={!nickname.trim() || !inviteCode.trim()}
+          disabled={!nickname.trim()}
           className="mt-8 w-full bg-md-accent text-black font-medium py-4 rounded-full shadow-elevation-1 hover:shadow-elevation-2 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           Join Roundtable <ArrowRight size={18} />

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Message, Participant } from '../types';
 import { ThumbsUp, ThumbsDown, GitBranch, Minus, Hand } from 'lucide-react';
 
@@ -12,6 +12,11 @@ interface ChatBubbleProps {
 export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, sender, participants, hostName }) => {
   const isUser = message.senderId === 'user';
 
+  const sortedNames = useMemo(
+    () => participants.map(p => p.name).sort((a, b) => b.length - a.length),
+    [participants]
+  );
+
   // Helper to escape characters for Regex
   const escapeRegExp = (string: string) => {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -19,14 +24,11 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, sender, partici
 
   // 1. First Pass: Handle @Mentions
   const parseMentions = (text: string): React.ReactNode[] => {
-      // Sort names by length descending to ensure full names are matched before partials
-      const names = participants.map(p => p.name).sort((a, b) => b.length - a.length);
-      
       const hostAliases = ['Host', 'User'];
       if (hostName) hostAliases.push(hostName);
       hostAliases.sort((a, b) => b.length - a.length);
 
-      const allTargets = [...names, ...hostAliases].map(name => escapeRegExp(name));
+      const allTargets = [...sortedNames, ...hostAliases].map(name => escapeRegExp(name));
       
       const pattern = `(@(?:${allTargets.join('|')}))`;
       const regex = new RegExp(pattern, 'gi');
@@ -111,12 +113,12 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, sender, partici
 
     switch (message.stance) {
         case 'AGREE':
-            colorClass = `bg-green-500/${10 + (intensity * 5)} text-green-400 border-green-500/20`;
+            colorClass = 'bg-green-500/20 text-green-400 border-green-500/30';
             icon = <ThumbsUp size={10} />;
             text = `${getAdjective(intensity)}Agrees`;
             break;
         case 'DISAGREE':
-            colorClass = `bg-red-500/${10 + (intensity * 5)} text-red-400 border-red-500/20`;
+            colorClass = 'bg-red-500/20 text-red-400 border-red-500/30';
             icon = <ThumbsDown size={10} />;
             text = `${getAdjective(intensity)}Disagrees`;
             break;
