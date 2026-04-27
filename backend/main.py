@@ -23,8 +23,8 @@ api_key = os.environ.get("ANTHROPIC_API_KEY")
 if not api_key:
     raise ValueError("ANTHROPIC_API_KEY environment variable is required")
 
-MODEL = "MiniMax-M2"
-MINIMAX_BASE_URL = "https://api.minimaxi.com/anthropic/v1/messages"
+MODEL = "MiniMax-M2"  # Model name for MiniMax API
+MINIMAX_BASE_URL = "https://api.minimax.com/anthropic/v1/messages"
 
 # Reuse a single httpx client for connection pooling
 http_client = httpx.Client(timeout=120.0)

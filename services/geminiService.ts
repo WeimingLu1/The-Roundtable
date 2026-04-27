@@ -7,19 +7,15 @@ const AVATAR_COLORS = [
   '#3B82F6', '#6366F1', '#8B5CF6', '#EC4899', '#84CC16'
 ];
 
-// Reuse a single AbortController for API calls (internal cancellation)
-// External callers can also provide their own AbortController via apiCall options
-let sharedAbortController: AbortController | null = null;
+// NOTE: No sharedAbortController - each apiCall manages its own timeout abort.
+// External callers provide their own AbortSignal via options.signal for external cancellation.
 
 interface ApiCallOptions {
   signal?: AbortSignal;
 }
 
 async function apiCall<T>(endpoint: string, body: any, timeoutMs: number = 30000, options: ApiCallOptions = {}): Promise<T> {
-  // Abort any previous in-flight request using shared controller
-  sharedAbortController?.abort();
   const controller = new AbortController();
-  sharedAbortController = controller;
 
   // Merge external signal if provided (external takes priority for early abort)
   const signal = options.signal ?? controller.signal;

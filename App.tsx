@@ -483,7 +483,7 @@ export default function App() {
                    {updatingParticipantId ? 'Preparing Guest...' : 'Start Roundtable'}
                 </button>
                 <button
-                    onClick={() => { if (topic.trim() && userContext) { setAppState(AppState.GENERATING_PANEL); generatePanel(topic, userContext).then(panel => { setParticipants(panel); setAppState(AppState.PANEL_REVIEW); }).catch(() => setAppState(AppState.LANDING)); } }}
+                    onClick={() => { if (topic.trim() && userContext) { abortControllerRef.current?.abort(); abortControllerRef.current = new AbortController(); setAppState(AppState.GENERATING_PANEL); generatePanel(topic, userContext, abortControllerRef.current.signal).then(panel => { setParticipants(panel); setAppState(AppState.PANEL_REVIEW); }).catch(e => { if (e.name !== 'AbortError') { console.error('Reshuffle failed:', e); setAppState(AppState.LANDING); } }); } }}
                     disabled={!!updatingParticipantId}
                     className="w-full text-md-secondary text-sm font-medium py-3 rounded-full hover:bg-white/5 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
                 >
