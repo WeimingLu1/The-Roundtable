@@ -65,11 +65,19 @@ ${summary.core_viewpoints.map(vp => `
         });
       } catch (err) {
         // User cancelled or share failed, fall back to copy
-        handleCopy();
+        try {
+          await navigator.clipboard.writeText(textToShare);
+        } catch {
+          console.error('Failed to copy to clipboard');
+        }
       }
     } else {
       // Fallback: copy to clipboard
-      handleCopy();
+      try {
+        await navigator.clipboard.writeText(textToShare);
+      } catch {
+        console.error('Failed to copy to clipboard');
+      }
     }
   };
 

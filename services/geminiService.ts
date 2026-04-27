@@ -42,9 +42,9 @@ async function apiCall<T>(endpoint: string, body: any, timeoutMs: number = 30000
   }
 }
 
-export const generateRandomTopic = async (language: string): Promise<string> => {
+export const generateRandomTopic = async (language: string, abortSignal?: AbortSignal): Promise<string> => {
   try {
-    const res = await apiCall<{ topic: string }>('/api/generate_random_topic', { language });
+    const res = await apiCall<{ topic: string }>('/api/generate_random_topic', { language }, 30000, { signal: abortSignal });
     return res.topic || '';
   } catch (e) {
     console.warn('Failed to generate random topic, using fallback:', e);
@@ -52,8 +52,8 @@ export const generateRandomTopic = async (language: string): Promise<string> => 
   }
 };
 
-export const generatePanel = async (topic: string, userContext: UserContext): Promise<Participant[]> => {
-  const res = await apiCall<{ participants: any[] }>('/api/generate_panel', { topic, userContext }, 90000);
+export const generatePanel = async (topic: string, userContext: UserContext, abortSignal?: AbortSignal): Promise<Participant[]> => {
+  const res = await apiCall<{ participants: any[] }>('/api/generate_panel', { topic, userContext }, 90000, { signal: abortSignal });
   const shuffledColors = [...AVATAR_COLORS].sort(() => 0.5 - Math.random());
 
   return res.participants.map((p: any, index: number) => ({
@@ -69,13 +69,15 @@ export const generatePanel = async (topic: string, userContext: UserContext): Pr
 export const generateSingleParticipant = async (
   inputQuery: string,
   topic: string,
-  userContext: UserContext
+  userContext: UserContext,
+  abortSignal?: AbortSignal
 ): Promise<{ name: string; title: string; stance: string }> => {
   try {
     return await apiCall<{ name: string; title: string; stance: string }>(
       '/api/generate_single_participant',
       { inputQuery, topic, userContext },
-      60000
+      60000,
+      { signal: abortSignal }
     );
   } catch (e) {
     console.warn('Failed to generate single participant, using fallback:', e);
@@ -88,7 +90,8 @@ export const predictNextSpeaker = async (
   participants: Participant[],
   messageHistory: Message[],
   userContext: UserContext,
-  turnCount: number
+  turnCount: number,
+  abortSignal?: AbortSignal
 ): Promise<string> => {
   try {
     const res = await apiCall<{ speakerId: string }>('/api/predict_next_speaker', {
@@ -97,7 +100,7 @@ export const predictNextSpeaker = async (
       messageHistory,
       userContext,
       turnCount,
-    });
+    }, 30000, { signal: abortSignal });
     return res.speakerId;
   } catch (e) {
     // Fallback safely - return first participant only if array is not empty
@@ -142,7 +145,8 @@ export const generateSummary = async (
   topic: string,
   messageHistory: Message[],
   participants: Participant[],
-  userContext: UserContext
+  userContext: UserContext,
+  abortSignal?: AbortSignal
 ): Promise<Summary> => {
-  return await apiCall('/api/generate_summary', { topic, messageHistory, participants, userContext });
+  return await apiCall('/api/generate_summary', { topic, messageHistory, participants, userContext }, 60000, { signal: abortSignal });
 };

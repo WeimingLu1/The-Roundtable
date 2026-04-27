@@ -523,6 +523,21 @@ CRITICAL REQUIREMENTS:
         for vp in data.get("core_viewpoints", []):
             if not vp.get("most_memorable_quote"):
                 vp["most_memorable_quote"] = vp.get("key_points", [""])[0] if vp.get("key_points") else ""
+        # Validate core_viewpoints count matches participants
+        if len(data.get("core_viewpoints", [])) != len(req.participants):
+            # Try to pad with placeholder entries or trim to match
+            if len(data.get("core_viewpoints", [])) < len(req.participants):
+                for i, p in enumerate(req.participants):
+                    if i >= len(data["core_viewpoints"]):
+                        data["core_viewpoints"].append({
+                            "speaker": p.name,
+                            "title": p.title,
+                            "stance": p.stance,
+                            "key_points": [],
+                            "most_memorable_quote": ""
+                        })
+            else:
+                data["core_viewpoints"] = data["core_viewpoints"][:len(req.participants)]
         return data
     except Exception as e:
         print(f"Error generating summary: {e}")

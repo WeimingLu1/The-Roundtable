@@ -212,9 +212,11 @@ export default function App() {
 
   const handleStart = async () => {
     if (!topic.trim() || !userContext) return;
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = new AbortController();
     setAppState(AppState.GENERATING_PANEL);
     try {
-      const panel = await generatePanel(topic, userContext);
+      const panel = await generatePanel(topic, userContext, abortControllerRef.current.signal);
       setParticipants(panel);
       setAppState(AppState.PANEL_REVIEW);
     } catch (e) {
@@ -230,9 +232,11 @@ export default function App() {
 
   const handleSwapParticipant = async (id: string, inputQuery: string) => {
       if (!userContext) return;
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = new AbortController();
       setUpdatingParticipantId(id);
       try {
-          const details = await generateSingleParticipant(inputQuery, topic, userContext);
+          const details = await generateSingleParticipant(inputQuery, topic, userContext, abortControllerRef.current.signal);
           setParticipants(prev => prev.map(p => {
               if (p.id === id) {
                   return {
@@ -270,7 +274,7 @@ export default function App() {
     // Extract @mentioned participant from text and store for generate_turn call
     let mentionedId: string | undefined;
     for (const p of stateRef.current.participants) {
-      if (text.includes(`@${p.name}`)) {
+      if (text.toLowerCase().includes(`@${p.name.toLowerCase()}`)) {
         mentionedId = p.id;
         break;
       }
@@ -333,9 +337,11 @@ export default function App() {
 
   const handleRandomTopic = async () => {
       if (!userContext || isLoadingTopic) return;
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = new AbortController();
       setIsLoadingTopic(true);
       try {
-          const newTopic = await generateRandomTopic(userContext.language);
+          const newTopic = await generateRandomTopic(userContext.language, abortControllerRef.current.signal);
           setTopic(newTopic);
       } catch (e) {
           console.error("Failed to generate random topic:", e);
