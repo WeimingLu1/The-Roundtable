@@ -104,7 +104,6 @@ class GenerateSummaryRequest(BaseModel):
 # --- Helper ---
 def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int = 1024) -> str:
     import json as json_module  # Local import to avoid scope issues
-    import random  # Local import to avoid scope issues
     import re  # Local import to avoid scope issues
 
     headers = {
