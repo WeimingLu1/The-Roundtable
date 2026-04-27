@@ -85,7 +85,7 @@ export default function App() {
     const { participants: currentParticipants, topic: currentTopic, messages: currentMessages, userContext: currentUserContext } = stateRef.current;
     const currentOpeningSpeakerIndex = stateRef.current.openingSpeakerIndex;
 
-    if (currentOpeningSpeakerIndex >= currentParticipants.length) {
+    if (!currentParticipants || currentParticipants.length === 0 || currentOpeningSpeakerIndex >= currentParticipants.length) {
       setAppState(AppState.DISCUSSION);
       setIsWaitingForUser(true);
       turnInProgressRef.current = false;
@@ -188,6 +188,8 @@ export default function App() {
       })
       .catch(e => {
         console.error('Discussion turn error:', e);
+        setIsWaitingForUser(true);
+        setAutoDebateCount(0);
         turnInProgressRef.current = false;
       })
       .finally(() => {
@@ -304,6 +306,9 @@ export default function App() {
 
   const handleConfirmBackToHome = () => {
       setShowConfirmModal(false);
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+      turnInProgressRef.current = false;
       setAppState(AppState.LANDING);
       setMessages([]);
       setParticipants([]);

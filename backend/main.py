@@ -303,8 +303,11 @@ Return ONLY the ID (e.g., expert_1).
 
 @app.post("/api/generate_turn")
 def generate_turn(req: GenerateTurnRequest):
+    # Validate speakerId exists
     speaker = next((p for p in req.participants if p.id == req.speakerId), None)
-    speaker_name = speaker.name if speaker else "Unknown"
+    if not speaker:
+        raise ValueError(f"Speaker ID '{req.speakerId}' not found in participants")
+    speaker_name = speaker.name
     valid_names_list = ", ".join([p.name for p in req.participants])
 
     if req.isOpeningStatement:
