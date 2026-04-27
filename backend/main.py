@@ -240,7 +240,7 @@ def predict_next_speaker(req: PredictNextSpeakerRequest):
     if not req.participants:
         return {"speakerId": "user"}
 
-    # Check @Mentions
+    # Check @Mentions FIRST — always prioritize explicit @mentions
     for p in req.participants:
         if f"@{p.name}" in last_text:
             return {"speakerId": p.id}
@@ -506,9 +506,33 @@ CRITICAL REQUIREMENTS:
         text = get_ai_response(prompt, json_mode=True, max_tokens=1024)
         import json
         data = json.loads(text)
+        # Validate required fields
+        if not data.get("topic"):
+            data["topic"] = req.topic
+        if not data.get("summary"):
+            data["summary"] = ""
+        if not data.get("core_viewpoints"):
+            data["core_viewpoints"] = []
+        if not data.get("key_discussion_moments"):
+            data["key_discussion_moments"] = []
+        if not data.get("questions"):
+            data["questions"] = []
+        if not data.get("conclusion"):
+            data["conclusion"] = ""
+        # Validate each core_viewpoint has most_memorable_quote
+        for vp in data.get("core_viewpoints", []):
+            if not vp.get("most_memorable_quote"):
+                vp["most_memorable_quote"] = vp.get("key_points", [""])[0] if vp.get("key_points") else ""
         return data
     except Exception as e:
-        return {"topic": req.topic, "core_viewpoints": [], "questions": []}
+        return {
+            "topic": req.topic,
+            "summary": "",
+            "core_viewpoints": [],
+            "key_discussion_moments": [],
+            "questions": [],
+            "conclusion": ""
+        }
 
 
 if __name__ == "__main__":

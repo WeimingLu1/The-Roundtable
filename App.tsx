@@ -228,16 +228,8 @@ export default function App() {
   const handleSwapParticipant = async (id: string, inputQuery: string) => {
       if (!userContext) return;
       setUpdatingParticipantId(id);
-
-      // AbortController for canceling the API call
-      const abortController = new AbortController();
-      const timeoutId = setTimeout(() => {
-        abortController.abort();
-      }, 45000);  // 45s timeout — API call takes 3-5s but allow for network variance
-
       try {
           const details = await generateSingleParticipant(inputQuery, topic, userContext);
-
           setParticipants(prev => prev.map(p => {
               if (p.id === id) {
                   return {
@@ -253,7 +245,6 @@ export default function App() {
           console.error("Failed to swap participant", error);
           setParticipants(prev => prev.map(p => p.id === id ? { ...p, name: inputQuery, title: 'Guest', stance: 'Ready.' } : p));
       } finally {
-          clearTimeout(timeoutId);
           setUpdatingParticipantId(null);
       }
   };
@@ -282,6 +273,10 @@ export default function App() {
       }
     }
     stateRef.current.mentionedParticipantId = mentionedId;
+
+    // Abort any in-flight request before starting new turn
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = new AbortController();
 
     setMessages(prev => [...prev, userMsg]);
     setIsWaitingForUser(false);
@@ -317,13 +312,13 @@ export default function App() {
       setTopic('');
       setIsWaitingForUser(false);
       setSummary(null);
-      // Reset other state
       setOpeningSpeakerIndex(0);
       setAutoDebateCount(0);
       setCurrentRoundLimit(3);
       setIsTyping(false);
       setThinkingSpeakerId(null);
       setIsSummarizing(false);
+      setUpdatingParticipantId(null);
   };
 
   const handleCancelBackToHome = () => {

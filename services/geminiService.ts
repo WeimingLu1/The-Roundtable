@@ -122,10 +122,10 @@ export const generateTurnForSpeaker = async (
       maxTurns,
       isOpeningStatement,
       mentionedParticipantId,
-    });
+    }, 45000);  // 45s timeout for potentially long philosophical responses
   } catch (error) {
     console.error('Error generating turn:', error);
-    throw error;  // Surface the error to caller instead of silent "..." fallback
+    throw error;
   }
 };
 
