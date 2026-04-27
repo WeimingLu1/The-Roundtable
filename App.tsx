@@ -109,7 +109,7 @@ export default function App() {
       currentUserContext,
       0, 0, true,
       undefined,
-      abortController.signal
+      abortControllerRef.current!.signal
     ).then(result => {
       const newMessage: Message = {
         id: Date.now().toString(),
@@ -163,7 +163,7 @@ export default function App() {
           currentRoundLimitVal,
           false,
           mentionedParticipantId,
-          abortController.signal
+          abortControllerRef.current!.signal
         );
         // Clear mentionedParticipantId after use
         stateRef.current.mentionedParticipantId = undefined;
@@ -200,7 +200,7 @@ export default function App() {
         setIsTyping(false);
         turnInProgressRef.current = false;
       });
-  }, [isTyping, thinkingSpeakerId, autoDebateCount, isWaitingForUser, appState, mentionedParticipantId]);
+  }, [isTyping, thinkingSpeakerId, autoDebateCount, isWaitingForUser, appState]);
 
 
   // --- HANDLERS ---
