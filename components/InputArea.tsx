@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Square, Sparkles, Lock } from 'lucide-react';
+import { Send, Sparkles, Lock } from 'lucide-react';
 import { Participant } from '../types';
 
 interface InputAreaProps {
