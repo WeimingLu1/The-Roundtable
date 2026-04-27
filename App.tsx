@@ -38,11 +38,6 @@ export default function App() {
   // Keep latest state snapshot for async callbacks to avoid stale closures
   const stateRef = useRef({ appState, topic, participants, messages, userContext, autoDebateCount, currentRoundLimit, openingSpeakerIndex, isWaitingForUser, isSummarizing, mentionedParticipantId: undefined as string | undefined });
 
-  // Keep stateRef in sync with latest state
-  useEffect(() => {
-    stateRef.current = { appState, topic, participants, messages, userContext, autoDebateCount, currentRoundLimit, openingSpeakerIndex, isWaitingForUser, isSummarizing, mentionedParticipantId: stateRef.current.mentionedParticipantId };
-  }, [appState, topic, participants, messages, userContext, autoDebateCount, currentRoundLimit, openingSpeakerIndex, isWaitingForUser, isSummarizing]);
-
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
@@ -61,6 +56,9 @@ export default function App() {
     // Check turnInProgress BEFORE starting to prevent race conditions
     if (turnInProgressRef.current) return;
     turnInProgressRef.current = true;
+
+    // Keep stateRef in sync with latest state (includes mentionedParticipantId)
+    stateRef.current = { appState, topic, participants, messages, userContext, autoDebateCount, currentRoundLimit, openingSpeakerIndex, isWaitingForUser, isSummarizing, mentionedParticipantId: stateRef.current.mentionedParticipantId };
 
     // Abort any in-flight request from previous run
     abortControllerRef.current?.abort();

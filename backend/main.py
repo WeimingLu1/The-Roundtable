@@ -101,6 +101,10 @@ class GenerateSummaryRequest(BaseModel):
 
 # --- Helper ---
 def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int = 1024) -> str:
+    import json as json_module  # Local import to avoid scope issues
+    import random  # Local import to avoid scope issues
+    import re  # Local import to avoid scope issues
+
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -109,7 +113,7 @@ def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int = 1024
 
     data = {
         "model": MODEL,
-        "max_tokens": None if json_mode else max_tokens,  # No limit for JSON mode
+        "max_tokens": max_tokens,
         "messages": [{"role": "user", "content": prompt}],
         "extra_body": {"thinking_enabled": False}
     }
@@ -117,9 +121,8 @@ def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int = 1024
     if json_mode:
         data["extra_body"]["response_format"] = {"type": "json_object"}
         data["messages"] = [{"role": "user", "content": prompt.rstrip() + "\n\nRespond with ONLY valid JSON. No explanation, no markdown."}]
-        # For JSON mode, use a generous token limit (deletion approach can cause issues)
-        if json_mode:
-            del data["max_tokens"]
+        # For JSON mode, use a generous token limit instead of None to avoid API issues
+        data["max_tokens"] = 4096
 
     response = http_client.post(MINIMAX_BASE_URL, json=data, headers=headers)
     response.raise_for_status()
@@ -140,7 +143,6 @@ def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int = 1024
             return text_result
 
     # Fallback: try to extract JSON from thinking block
-    import re
     for block in content:
         if block.get("type") == "thinking":
             thinking = block.get("thinking", "")
@@ -148,9 +150,9 @@ def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int = 1024
             match = re.search(r'\{[^{}]*\}', thinking, re.DOTALL)
             if match:
                 try:
-                    json.loads(match.group(0))
+                    json_module.loads(match.group(0))
                     return match.group(0)
-                except json.JSONDecodeError:
+                except json_module.JSONDecodeError:
                     pass
     return ""
 
