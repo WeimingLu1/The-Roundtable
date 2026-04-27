@@ -36,11 +36,11 @@ export default function App() {
   const turnInProgressRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   // Keep latest state snapshot for async callbacks to avoid stale closures
-  const stateRef = useRef({ appState, topic, participants, messages, userContext, autoDebateCount, currentRoundLimit, openingSpeakerIndex, isWaitingForUser, isSummarizing });
+  const stateRef = useRef({ appState, topic, participants, messages, userContext, autoDebateCount, currentRoundLimit, openingSpeakerIndex, isWaitingForUser, isSummarizing, mentionedParticipantId: undefined as string | undefined });
 
   // Keep stateRef in sync with latest state
   useEffect(() => {
-    stateRef.current = { appState, topic, participants, messages, userContext, autoDebateCount, currentRoundLimit, openingSpeakerIndex, isWaitingForUser, isSummarizing };
+    stateRef.current = { appState, topic, participants, messages, userContext, autoDebateCount, currentRoundLimit, openingSpeakerIndex, isWaitingForUser, isSummarizing, mentionedParticipantId: stateRef.current.mentionedParticipantId };
   }, [appState, topic, participants, messages, userContext, autoDebateCount, currentRoundLimit, openingSpeakerIndex, isWaitingForUser, isSummarizing]);
 
   const scrollToBottom = useCallback(() => {
@@ -123,6 +123,9 @@ export default function App() {
       setOpeningSpeakerIndex(prev => prev + 1);
     }).catch(e => {
       console.error('Opening statement error:', e);
+      setIsTyping(false);
+      setThinkingSpeakerId(null);
+      setAppState(AppState.LANDING);
       turnInProgressRef.current = false;
     }).finally(() => {
       setThinkingSpeakerId(null);
@@ -138,7 +141,7 @@ export default function App() {
     if (isTyping || thinkingSpeakerId) return;
     if (!turnInProgressRef.current) return; // Coordinator hasn't set up yet
 
-    const { topic: currentTopic, participants: currentParticipants, messages: currentMessages, userContext: currentUserContext, autoDebateCount: currentAutoDebateCount, currentRoundLimit: currentRoundLimitVal } = stateRef.current;
+    const { topic: currentTopic, participants: currentParticipants, messages: currentMessages, userContext: currentUserContext, autoDebateCount: currentAutoDebateCount, currentRoundLimit: currentRoundLimitVal, mentionedParticipantId } = stateRef.current;
 
     if (!currentUserContext) {
       turnInProgressRef.current = false;
@@ -158,8 +161,11 @@ export default function App() {
           currentUserContext,
           currentAutoDebateCount,
           currentRoundLimitVal,
-          false
+          false,
+          mentionedParticipantId
         );
+        // Clear mentionedParticipantId after use
+        stateRef.current.mentionedParticipantId = undefined;
         return { nextSpeakerId, result };
       })
       .then(({ nextSpeakerId, result }) => {
@@ -266,6 +272,16 @@ export default function App() {
         timestamp: Date.now(),
         isInterruption: false
     };
+
+    // Extract @mentioned participant from text and store for generate_turn call
+    let mentionedId: string | undefined;
+    for (const p of stateRef.current.participants) {
+      if (text.includes(`@${p.name}`)) {
+        mentionedId = p.id;
+        break;
+      }
+    }
+    stateRef.current.mentionedParticipantId = mentionedId;
 
     setMessages(prev => [...prev, userMsg]);
     setIsWaitingForUser(false);

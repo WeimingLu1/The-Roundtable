@@ -108,7 +108,8 @@ export const generateTurnForSpeaker = async (
   userContext: UserContext,
   turnCount: number,
   maxTurns: number,
-  isOpeningStatement: boolean = false
+  isOpeningStatement: boolean = false,
+  mentionedParticipantId?: string
 ): Promise<{ text: string; stance?: string; stanceIntensity?: number; shouldWaitForUser: boolean }> => {
   try {
     return await apiCall('/api/generate_turn', {
@@ -120,10 +121,11 @@ export const generateTurnForSpeaker = async (
       turnCount,
       maxTurns,
       isOpeningStatement,
+      mentionedParticipantId,
     });
   } catch (error) {
     console.error('Error generating turn:', error);
-    return { text: '...', stance: 'NEUTRAL', stanceIntensity: 3, shouldWaitForUser: true };
+    throw error;  // Surface the error to caller instead of silent "..." fallback
   }
 };
 

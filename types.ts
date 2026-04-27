@@ -37,6 +37,15 @@ export enum AppState {
 
 export interface Summary {
   topic: string;
-  core_viewpoints: Array<{ speaker: string, point: string }>;
-  questions: string[];
+  summary: string;  // narrative overview
+  core_viewpoints: Array<{
+    speaker: string;
+    title: string;
+    stance: string;
+    key_points: string[];
+    most_memorable_quote: string;
+  }>;
+  key_discussion_moments: string[];
+  questions: Array<{ question: string; why_unresolved: string }>;
+  conclusion: string;
 }

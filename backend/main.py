@@ -89,6 +89,7 @@ class GenerateTurnRequest(BaseModel):
     turnCount: int
     maxTurns: int
     isOpeningStatement: bool = False
+    mentionedParticipantId: Optional[str] = None  # If @someone was used, their ID
 
 
 class GenerateSummaryRequest(BaseModel):
@@ -313,14 +314,25 @@ Task: State your core argument clearly and naturally.
 - Be direct but polite.
 - Do not address other guests yet.
 - Keep it under 50 words.
+- ABSOLUTE PROHIBITION: Do NOT start with greetings like "Hello", "Hi everyone", "Good morning", "很高兴", "大家好", etc. Start directly with your substantive argument.
 
-Output: Just the spoken text. No labels.
+Output: Just the spoken text. No labels, no greetings.
 """
         try:
             text = get_ai_response(prompt)
+            if not text or len(text.strip()) < 3:
+                raise ValueError("Opening statement too short or empty")
+            # Reject greeting-only responses
+            greeting_patterns = ["hello", "hi ", "good morning", "good afternoon", "good evening", "很高兴", "大家好", "各位好", "很高兴认识"]
+            text_lower = text.strip().lower()
+            if any(text_lower.startswith(g) for g in greeting_patterns):
+                raise ValueError(f"Opening statement starts with greeting: {text[:30]}")
             return {"text": text.strip(), "stance": "NEUTRAL", "stanceIntensity": 3, "shouldWaitForUser": False}
-        except Exception:
-            return {"text": "Hello.", "stance": "NEUTRAL", "stanceIntensity": 3, "shouldWaitForUser": False}
+        except ValueError:
+            raise  # Re-raise ValueError as-is for intentional rejections
+        except Exception as e:
+            print(f"Opening statement error: {e}")
+            raise ValueError(f"Opening statement generation failed: {e}")
 
     # Discussion turn
     recent_history = "\n\n".join([
@@ -339,8 +351,17 @@ Output: Just the spoken text. No labels.
 
     strategy = "**STRATEGY: DIVERGE (Breadth)**. STOP dwelling on the current specific point. Abruptly SHIFT the lens to a NEW dimension. **MANDATORY**: Use stance 'PIVOT'." if is_breadth_turn else "**STRATEGY: CONVERGE (Depth)**. Drill deeper into the specific logic of the previous speaker."
 
-    directives = ""
-    if host_just_spoke:
+    mentioned_in_last_host_msg = None
+    if last_message and last_message.senderId == "user":
+        for p in req.participants:
+            if f"@{p.name}" in last_message.text:
+                mentioned_in_last_host_msg = p
+                break
+
+    # Override speaker selection if this speaker was @mentioned by host
+    if mentioned_in_last_host_msg and req.speakerId == mentioned_in_last_host_msg.id:
+        directives = f"CRITICAL: The Host (@{req.userContext.nickname}) just @mentioned you ({mentioned_in_last_host_msg.name}) and asked: \"{last_message.text[:100]}...\"\nINSTRUCTION: You MUST directly answer the Host's specific question as {mentioned_in_last_host_msg.name}. Do NOT pivot to other experts. Do NOT give a generic statement. Address the question head-on."
+    elif host_just_spoke:
         directives = f"PRIORITY: The Host (@{req.userContext.nickname}) just spoke: \"{last_message.text}\". INSTRUCTION: Answer the Host directly. Do not pivot to others yet."
     elif force_return_to_host:
         directives = f"PRIORITY: This is the end of the current debate round. INSTRUCTION: You MUST cue the Host (@{req.userContext.nickname}) with a specific OPEN-ENDED QUESTION. 禁止: Do not cue other experts."
@@ -419,7 +440,7 @@ Action is "WAIT" if force yielding, otherwise "CONTINUE".
         }
     except Exception as e:
         print(f"Error generating turn: {e}")
-        return {"text": "...", "stance": "NEUTRAL", "stanceIntensity": 3, "shouldWaitForUser": True}
+        raise ValueError(f"Discussion turn generation failed: {e}")
 
 
 @app.post("/api/generate_summary")
@@ -429,11 +450,58 @@ def generate_summary(req: GenerateSummaryRequest):
         for m in req.messageHistory
     ])
 
-    prompt = f"""Topic: {req.topic}
+    # Build participant context for summary
+    participant_context = "\n".join([
+        f"- {p.name} ({p.title}): Stance on topic = {p.stance}"
+        for p in req.participants
+    ])
+
+    prompt = f"""You are summarizing a high-quality intellectual roundtable discussion.
+
+Topic: {req.topic}
+
+Participants:
+{participant_context}
+
 Language: {req.userContext.language}
-Transcript: {transcript}
-Summarize: topic, each speaker's view, open questions.
-Return JSON: {{"topic":"?","core_viewpoints":[{{"speaker":"?","point":"?"}}],"questions":["?"]}}"""
+
+Transcript (full discussion):
+{transcript}
+
+Your task: Write a comprehensive summary in the user's language ({req.userContext.language}).
+
+Return a JSON object with EXACTLY this structure:
+{{
+  "topic": "The discussion topic (1 sentence)",
+  "summary": "A 3-5 sentence narrative summary of the entire discussion flow, highlighting key turning points and insights",
+  "core_viewpoints": [
+    {{
+      "speaker": "EXACT name from the participant list above",
+      "title": "their professional title",
+      "stance": "their position on the topic (one sentence)",
+      "key_points": ["specific point 1", "specific point 2", "specific point 3"],
+      "most_memorable_quote": "a direct quote from the discussion that captures their view"
+    }}
+  ],
+  "key_discussion_moments": [
+    "Description of a significant exchange or debate point that shaped the discussion"
+  ],
+  "questions": [
+    {{
+      "question": "A thought-provoking open question that emerged from the discussion",
+      "why_unresolved": "Why this question remains open or debated"
+    }}
+  ],
+  "conclusion": "A 1-2 sentence conclusion synthesizing the overall discussion"
+}}
+
+CRITICAL REQUIREMENTS:
+- "core_viewpoints" MUST have exactly {len(req.participants)} entries (one per participant). If a participant did not speak, use their known stance from the participant list.
+- "key_discussion_moments" MUST have at least 2 entries.
+- "questions" MUST have at least 2 open questions.
+- "summary" must be substantive, not generic.
+- Use the EXACT participant names as provided in the participant list above.
+"""
     try:
         text = get_ai_response(prompt, json_mode=True, max_tokens=1024)
         import json
