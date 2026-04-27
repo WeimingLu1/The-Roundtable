@@ -46,6 +46,8 @@ class Message(BaseModel):
     senderId: str
     text: str
     stance: Optional[str] = None
+    timestamp: Optional[int] = None
+    isInterruption: Optional[bool] = False
 
 
 class Participant(BaseModel):
