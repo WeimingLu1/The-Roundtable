@@ -143,19 +143,7 @@ def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int = 1024
                 text_result = text_result.strip()
             return text_result
 
-    # Fallback: try to extract JSON from thinking block
-    for block in content:
-        if block.get("type") == "thinking":
-            thinking = block.get("thinking", "")
-            # Look for JSON object with expected key
-            match = re.search(r'\{[^{}]*\}', thinking, re.DOTALL)
-            if match:
-                try:
-                    json_module.loads(match.group(0))
-                    return match.group(0)
-                except json_module.JSONDecodeError:
-                    pass
-    return ""
+    raise ValueError("AI response contained no text block and no parseable JSON in thinking")
 
 
 # --- Endpoints ---
@@ -312,8 +300,8 @@ def generate_turn(req: GenerateTurnRequest):
 
     if req.isOpeningStatement:
         prompt = f"""
-Role: You are {speaker_name}, {speaker.title if speaker else ''}.
-Core Stance: {speaker.stance if speaker else ''}.
+Role: You are {speaker_name}, {speaker.title}.
+Core Stance: {speaker.stance}.
 Topic: "{req.topic}"
 Language: {req.userContext.language}
 
@@ -383,8 +371,8 @@ Language: {req.userContext.language}
 Host: {req.userContext.nickname}
 Valid Participants: {valid_names_list}
 
-You are: {speaker_name} ({speaker.title if speaker else ''}).
-Starting Philosophy: {speaker.stance if speaker else ''}
+You are: {speaker_name} ({speaker.title}).
+Starting Philosophy: {speaker.stance}.
 
 Transcript (Recent Context):
 {recent_history}
