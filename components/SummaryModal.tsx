@@ -44,6 +44,35 @@ ${summary.conclusion || ''}
     });
   };
 
+  const handleShare = async () => {
+    const textToShare = `
+【圆桌会议】${summary.topic}
+
+概述: ${summary.summary || ''}
+
+${summary.core_viewpoints.map(vp => `
+• ${vp.speaker} (${vp.title}): ${vp.stance}
+`).join('')}
+
+结论: ${summary.conclusion || ''}
+    `.trim();
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `圆桌会议: ${summary.topic}`,
+          text: textToShare,
+        });
+      } catch (err) {
+        // User cancelled or share failed, fall back to copy
+        handleCopy();
+      }
+    } else {
+      // Fallback: copy to clipboard
+      handleCopy();
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
       <div className="bg-md-surface-container w-full max-w-2xl rounded-2xl shadow-2xl border border-white/10 overflow-hidden flex flex-col max-h-[90vh]">
@@ -156,7 +185,7 @@ ${summary.conclusion || ''}
             {copied ? <Check size={16} className="text-green-500"/> : <Copy size={16} />}
             {copied ? "Copied" : "Copy"}
           </button>
-           <button className="flex-1 py-3 flex justify-center items-center gap-2 bg-md-accent text-black rounded-xl font-medium text-sm hover:opacity-90">
+           <button onClick={handleShare} className="flex-1 py-3 flex justify-center items-center gap-2 bg-md-accent text-black rounded-xl font-medium text-sm hover:opacity-90">
             <Share2 size={16} /> Share
           </button>
         </div>

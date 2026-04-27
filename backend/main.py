@@ -290,7 +290,9 @@ Return ONLY the ID (e.g., expert_1).
         valid = next((p.id for p in req.participants if p.id == speaker_id), None)
         if valid:
             return {"speakerId": valid}
-        other_speakers = [p for p in req.participants if p.id != last_message.senderId]
+        # Safely filter out last speaker if last_message exists
+        last_sender_id = last_message.senderId if last_message else None
+        other_speakers = [p for p in req.participants if p.id != last_sender_id] if last_sender_id else list(req.participants)
         if other_speakers:
             import random
             return {"speakerId": random.choice(other_speakers).id}
