@@ -103,8 +103,6 @@ class GenerateSummaryRequest(BaseModel):
 
 # --- Helper ---
 def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int = 1024) -> str:
-    import json as json_module  # Local import to avoid scope issues
-    import re  # Local import to avoid scope issues
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -233,7 +231,7 @@ def predict_next_speaker(req: PredictNextSpeakerRequest):
 
     # Check @Mentions FIRST — always prioritize explicit @mentions
     for p in req.participants:
-        if f"@{p.name}" in last_text:
+        if f"@{p.name.lower()}" in last_text.lower():
             return {"speakerId": p.id}
 
     # Format participants
@@ -350,7 +348,7 @@ Output: Just the spoken text. No labels, no greetings.
     mentioned_in_last_host_msg = None
     if last_message and last_message.senderId == "user":
         for p in req.participants:
-            if f"@{p.name}" in last_message.text:
+            if f"@{p.name.lower()}" in last_message.text.lower():
                 mentioned_in_last_host_msg = p
                 break
 
