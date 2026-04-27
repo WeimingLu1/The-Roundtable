@@ -33,50 +33,68 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, sender, partici
 
       const allTargets = [...sortedNames, ...hostAliases].map(name => escapeRegExp(name));
       
-      const pattern = `(@(?:${allTargets.join('|')}))`;
+      // Use matchAll + manual reconstruction instead of split() to correctly preserve @mention text
+      // split() with non-capturing group removes @mention entirely; split() with capturing group
+      // puts only the captured name (without @) in the result, breaking startsWith('@') check.
+      const pattern = `@(${allTargets.join('|')})`;
       const regex = new RegExp(pattern, 'gi');
 
-      const parts = text.split(regex); 
-      
-      return parts.map((part, i) => {
-          if (part.startsWith('@')) {
-              const rawName = part.substring(1); // Remove @
-              
-              // Check Guests
-              const target = participants.find(p => p.name.toLowerCase() === rawName.toLowerCase());
-              if (target) {
-                  return (
-                      <span 
-                        key={`mention-${i}`} 
-                        className="font-bold px-1.5 py-0.5 rounded mx-0.5 text-xs align-baseline border border-opacity-40 shadow-sm whitespace-nowrap inline-block" 
-                        style={{ 
-                            color: target.color, 
-                            backgroundColor: `${target.color}25`,
-                            borderColor: target.color 
-                        }}
-                      >
-                          {part}
-                      </span>
-                  );
-              }
+      const result: React.ReactNode[] = [];
+      let lastIndex = 0;
 
-              // Check Host
-              const isHostMention = hostAliases.some(alias => alias.toLowerCase() === rawName.toLowerCase());
-              if (isHostMention) {
-                   return (
-                    <span key={`mention-${i}`} className={`font-bold px-1.5 py-0.5 rounded mx-0.5 text-xs shadow-sm whitespace-nowrap inline-block border
-                        ${isUser 
-                            ? 'text-black bg-white/20 border-black/10' 
-                            : 'text-white bg-[#424242] border-gray-500' // Explicit gray highlight for AI mentioning user
-                        }
-                    `}>
-                        {part}
-                    </span>
-                   );
-              }
+      for (const match of text.matchAll(regex)) {
+        const matchText = match[0]; // Full match including @ (e.g., "@Alice")
+        const rawName = match[1];   // Captured name (e.g., "Alice") for lookup
+        const matchIndex = match.index!;
+
+        // Add text before the match
+        if (matchIndex > lastIndex) {
+          result.push(text.slice(lastIndex, matchIndex));
+        }
+
+        // Find the target participant or check host aliases
+        const target = participants.find(p => p.name.toLowerCase() === rawName.toLowerCase());
+        if (target) {
+          result.push(
+            <span
+              key={`mention-${matchIndex}`}
+              className="font-bold px-1.5 py-0.5 rounded mx-0.5 text-xs align-baseline border border-opacity-40 shadow-sm whitespace-nowrap inline-block"
+              style={{
+                color: target.color,
+                backgroundColor: `${target.color}25`,
+                borderColor: target.color
+              }}
+            >
+              {matchText}
+            </span>
+          );
+        } else {
+          const isHostMention = hostAliases.some(alias => alias.toLowerCase() === rawName.toLowerCase());
+          if (isHostMention) {
+            result.push(
+              <span key={`mention-${matchIndex}`} className={`font-bold px-1.5 py-0.5 rounded mx-0.5 text-xs shadow-sm whitespace-nowrap inline-block border
+                ${isUser
+                  ? 'text-black bg-white/20 border-black/10'
+                  : 'text-white bg-[#424242] border-gray-500'
+              }`}>
+                {matchText}
+              </span>
+            );
+          } else {
+            // Unknown mention - render as plain text with @
+            result.push(matchText);
           }
-          return part;
-      });
+        }
+
+        lastIndex = matchIndex + matchText.length;
+      }
+
+      // Add remaining text after last match
+      if (lastIndex < text.length) {
+        result.push(text.slice(lastIndex));
+      }
+
+      return result;
   };
 
   // 2. Second Pass: Handle **Bold** Markdown (Applied recursively on text parts)
