@@ -68,12 +68,12 @@ export default function App() {
     // Use state snapshot captured at effect start to avoid stale closures
     const { appState: currentAppState, topic: currentTopic, participants: currentParticipants, messages: currentMessages, userContext: currentUserContext, autoDebateCount: currentAutoDebateCount, currentRoundLimit: currentRoundLimitVal, openingSpeakerIndex: currentOpeningSpeakerIndex } = stateRef.current;
 
-    // Cleanup: abort request and reset turnInProgress on re-run or unmount
+    // Cleanup: abort request on re-run or unmount
+    // NOTE: Do NOT reset turnInProgressRef here - it's managed by the discussion effect
     return () => {
       abortController.abort();
-      turnInProgressRef.current = false;
     };
-  }, [isTyping, thinkingSpeakerId, appState, isWaitingForUser, isSummarizing, openingSpeakerIndex, autoDebateCount, participants, topic, userContext]);
+  }, [isTyping, thinkingSpeakerId, appState, isWaitingForUser, isSummarizing, openingSpeakerIndex, autoDebateCount, participants, topic, userContext, currentRoundLimit]);
 
   // Effect for opening statements phase
   useEffect(() => {
