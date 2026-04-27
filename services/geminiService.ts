@@ -37,8 +37,9 @@ async function apiCall<T>(endpoint: string, body: any, timeoutMs: number = 30000
       throw new Error(`API error: ${response.status}`);
     }
     return response.json();
-  } finally {
+  } catch (e) {
     clearTimeout(timeoutId);
+    throw e;
   }
 }
 

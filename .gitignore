@@ -26,3 +26,9 @@ dist-ssr
 # Environment variables (API keys)
 backend/.env
 
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+backend/__pycache__/
+
