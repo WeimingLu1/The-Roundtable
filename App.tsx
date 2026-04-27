@@ -75,7 +75,7 @@ export default function App() {
       abortController.abort();
       turnInProgressRef.current = false;
     };
-  }, [isTyping, thinkingSpeakerId, appState, isWaitingForUser, isSummarizing, openingSpeakerIndex, autoDebateCount]);
+  }, [isTyping, thinkingSpeakerId, appState, isWaitingForUser, isSummarizing, openingSpeakerIndex, autoDebateCount, participants, topic, userContext]);
 
   // Effect for opening statements phase
   useEffect(() => {
@@ -233,7 +233,7 @@ export default function App() {
       const abortController = new AbortController();
       const timeoutId = setTimeout(() => {
         abortController.abort();
-      }, 8000);
+      }, 45000);  // 45s timeout — API call takes 3-5s but allow for network variance
 
       try {
           const details = await generateSingleParticipant(inputQuery, topic, userContext);
@@ -476,7 +476,7 @@ export default function App() {
                    {updatingParticipantId ? 'Preparing Guest...' : 'Start Roundtable'}
                 </button>
                 <button
-                    onClick={() => handleStart()}
+                    onClick={() => { if (topic.trim() && userContext) { setAppState(AppState.GENERATING_PANEL); generatePanel(topic, userContext).then(panel => { setParticipants(panel); setAppState(AppState.PANEL_REVIEW); }).catch(() => setAppState(AppState.LANDING)); } }}
                     disabled={!!updatingParticipantId}
                     className="w-full text-md-secondary text-sm font-medium py-3 rounded-full hover:bg-white/5 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
                 >

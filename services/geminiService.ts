@@ -135,9 +135,5 @@ export const generateSummary = async (
   participants: Participant[],
   userContext: UserContext
 ): Promise<Summary> => {
-  try {
-    return await apiCall('/api/generate_summary', { topic, messageHistory, participants, userContext });
-  } catch (e) {
-    return { topic, core_viewpoints: [], questions: [] };
-  }
+  return await apiCall('/api/generate_summary', { topic, messageHistory, participants, userContext });
 };
