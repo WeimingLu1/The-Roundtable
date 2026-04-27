@@ -2,7 +2,7 @@ import os
 import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List, Any
 from dotenv import load_dotenv
 load_dotenv()
@@ -27,7 +27,7 @@ MODEL = "MiniMax-M2"
 MINIMAX_BASE_URL = "https://api.minimaxi.com/anthropic/v1/messages"
 
 # Reuse a single httpx client for connection pooling
-http_client = httpx.Client(timeout=60.0)
+http_client = httpx.Client(timeout=120.0)
 
 AVATAR_COLORS = [
     '#EF4444', '#F97316', '#F59E0B', '#10B981', '#06B6D4',
@@ -37,9 +37,9 @@ AVATAR_COLORS = [
 
 # --- Request/Response Models ---
 class UserContext(BaseModel):
-    nickname: str
-    identity: str
-    language: str
+    nickname: str = Field(min_length=1)
+    identity: str = Field(min_length=1)
+    language: str = Field(min_length=1)
 
 
 class Message(BaseModel):
@@ -50,9 +50,9 @@ class Message(BaseModel):
 
 class Participant(BaseModel):
     id: str
-    name: str
-    title: str
-    stance: str
+    name: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    stance: str = Field(min_length=1)
     roleType: str
     color: str
 
@@ -175,22 +175,29 @@ def generate_panel(req: GeneratePanelRequest):
 Language: {req.userContext.language}
 Select 3 diverse ALIVE experts for this debate. Return JSON:
 {{"participants": [{{"name": "?", "title": "?", "stance": "?"}}]}}"""
+    import json
+    import random
     try:
         text = get_ai_response(prompt, json_mode=True, max_tokens=768)
-        import json
         data = json.loads(text)
         participants = data.get("participants", [])
     except Exception as e:
         import traceback
         print(f"Error generating panel: {e}")
         traceback.print_exc()
-        participants = [
-            {"name": "Dr. Sarah Chen", "title": "Technology Ethics Researcher", "stance": "We should approach AI development cautiously with strong regulations."},
-            {"name": "Prof. Michael Torres", "title": "AI Systems Engineer", "stance": "Innovation requires room for experimentation; over-regulation stifles progress."},
-            {"name": "Dr. Aisha Patel", "title": "Cognitive Science Professor", "stance": "Human-AI collaboration offers the best path forward for society."},
-        ]
+        raise ValueError(f"Panel generation failed: {e}")
 
-    import random
+    # Validate: must have exactly 3 participants with required fields
+    if not isinstance(participants, list) or len(participants) == 0:
+        raise ValueError("Panel API returned no participants")
+    if len(participants) < 3:
+        raise ValueError(f"Panel API returned only {len(participants)} participant(s), need 3")
+    for i, p in enumerate(participants):
+        if not isinstance(p, dict):
+            raise ValueError(f"Participant {i} is not an object")
+        if not p.get("name") or not p.get("title") or not p.get("stance"):
+            raise ValueError(f"Participant {i} missing required fields (name/title/stance): {p}")
+
     shuffled_colors = AVATAR_COLORS.copy()
     random.shuffle(shuffled_colors)
 

@@ -45,26 +45,17 @@ export const generateRandomTopic = async (language: string): Promise<string> => 
 };
 
 export const generatePanel = async (topic: string, userContext: UserContext): Promise<Participant[]> => {
-  try {
-    const res = await apiCall<{ participants: any[] }>('/api/generate_panel', { topic, userContext });
-    const shuffledColors = [...AVATAR_COLORS].sort(() => 0.5 - Math.random());
+  const res = await apiCall<{ participants: any[] }>('/api/generate_panel', { topic, userContext }, 90000);
+  const shuffledColors = [...AVATAR_COLORS].sort(() => 0.5 - Math.random());
 
-    return res.participants.map((p: any, index: number) => ({
-      id: `expert_${index}`,
-      name: p.name,
-      title: p.title,
-      stance: p.stance,
-      roleType: 'expert',
-      color: shuffledColors[index % shuffledColors.length],
-    }));
-  } catch (error) {
-    console.error('Error generating panel:', error);
-    return [
-      { id: 'expert_0', name: 'Dr. Sarah Chen', roleType: 'expert', title: 'Technology Ethics Researcher', stance: 'We should approach AI development cautiously with strong regulations.', color: '#EF4444' },
-      { id: 'expert_1', name: 'Prof. Michael Torres', roleType: 'expert', title: 'AI Systems Engineer', stance: 'Innovation requires room for experimentation; over-regulation stifles progress.', color: '#3B82F6' },
-      { id: 'expert_2', name: 'Dr. Aisha Patel', roleType: 'expert', title: 'Cognitive Science Professor', stance: 'Human-AI collaboration offers the best path forward for society.', color: '#10B981' },
-    ];
-  }
+  return res.participants.map((p: any, index: number) => ({
+    id: `expert_${index}`,
+    name: p.name,
+    title: p.title,
+    stance: p.stance,
+    roleType: 'expert',
+    color: shuffledColors[index % shuffledColors.length],
+  }));
 };
 
 export const generateSingleParticipant = async (
@@ -75,7 +66,8 @@ export const generateSingleParticipant = async (
   try {
     return await apiCall<{ name: string; title: string; stance: string }>(
       '/api/generate_single_participant',
-      { inputQuery, topic, userContext }
+      { inputQuery, topic, userContext },
+      60000
     );
   } catch (e) {
     console.warn('Failed to generate single participant, using fallback:', e);

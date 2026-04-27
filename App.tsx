@@ -204,9 +204,15 @@ export default function App() {
   const handleStart = async () => {
     if (!topic.trim() || !userContext) return;
     setAppState(AppState.GENERATING_PANEL);
-    const panel = await generatePanel(topic, userContext);
-    setParticipants(panel);
-    setAppState(AppState.PANEL_REVIEW);
+    try {
+      const panel = await generatePanel(topic, userContext);
+      setParticipants(panel);
+      setAppState(AppState.PANEL_REVIEW);
+    } catch (e) {
+      console.error('Failed to generate panel:', e);
+      // Return to Landing so user can retry
+      setAppState(AppState.LANDING);
+    }
   };
 
   const handleUpdateParticipantName = (id: string, newName: string) => {
