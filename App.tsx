@@ -24,6 +24,7 @@ export default function App() {
   const [updatingParticipantId, setUpdatingParticipantId] = useState<string | null>(null);
 
   const [isWaitingForUser, setIsWaitingForUser] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   // Logic Control
   const [autoDebateCount, setAutoDebateCount] = useState(0);
@@ -283,21 +284,28 @@ export default function App() {
   };
 
   const handleBackToHome = () => {
-      if (window.confirm("End the current roundtable discussion?")) {
-          setAppState(AppState.LANDING);
-          setMessages([]);
-          setParticipants([]);
-          setTopic('');
-          setIsWaitingForUser(false);
-          setSummary(null);
-          // Reset other state
-          setOpeningSpeakerIndex(0);
-          setAutoDebateCount(0);
-          setCurrentRoundLimit(3);
-          setIsTyping(false);
-          setThinkingSpeakerId(null);
-          setIsSummarizing(false);
-      }
+      setShowConfirmModal(true);
+  };
+
+  const handleConfirmBackToHome = () => {
+      setShowConfirmModal(false);
+      setAppState(AppState.LANDING);
+      setMessages([]);
+      setParticipants([]);
+      setTopic('');
+      setIsWaitingForUser(false);
+      setSummary(null);
+      // Reset other state
+      setOpeningSpeakerIndex(0);
+      setAutoDebateCount(0);
+      setCurrentRoundLimit(3);
+      setIsTyping(false);
+      setThinkingSpeakerId(null);
+      setIsSummarizing(false);
+  };
+
+  const handleCancelBackToHome = () => {
+      setShowConfirmModal(false);
   };
 
   const handleRandomTopic = async () => {
@@ -538,6 +546,30 @@ export default function App() {
                  <Loader2 className="animate-spin text-md-accent mb-4" size={32} />
                  <p className="font-bold text-md-primary">Summarizing discussion...</p>
                  <p className="text-sm text-md-secondary">Extracting core viewpoints</p>
+             </div>
+          </div>
+      )}
+
+      {/* Confirmation Modal - non-blocking alternative to window.confirm */}
+      {showConfirmModal && (
+          <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm flex items-center justify-center animate-fade-in">
+             <div className="bg-md-surface-container p-6 rounded-2xl shadow-2xl border border-white/10 max-w-sm w-full mx-4">
+                 <h3 className="font-bold text-lg text-md-primary mb-2">End Roundtable?</h3>
+                 <p className="text-md-secondary text-sm mb-6">End the current roundtable discussion and return to the topic selection page?</p>
+                 <div className="flex gap-3">
+                     <button
+                         onClick={handleCancelBackToHome}
+                         className="flex-1 py-3 rounded-xl bg-md-surface-container-low text-md-primary font-medium text-sm hover:bg-white/10 transition-colors border border-white/10"
+                     >
+                         Cancel
+                     </button>
+                     <button
+                         onClick={handleConfirmBackToHome}
+                         className="flex-1 py-3 rounded-xl bg-red-500/20 text-red-400 font-medium text-sm hover:bg-red-500/30 transition-colors border border-red-500/20"
+                     >
+                         End Discussion
+                     </button>
+                 </div>
              </div>
           </div>
       )}
