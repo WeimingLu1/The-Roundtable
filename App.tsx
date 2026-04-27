@@ -107,7 +107,9 @@ export default function App() {
       currentParticipants,
       currentMessages,
       currentUserContext,
-      0, 0, true
+      0, 0, true,
+      undefined,
+      abortController.signal
     ).then(result => {
       const newMessage: Message = {
         id: Date.now().toString(),
@@ -160,7 +162,8 @@ export default function App() {
           currentAutoDebateCount,
           currentRoundLimitVal,
           false,
-          mentionedParticipantId
+          mentionedParticipantId,
+          abortController.signal
         );
         // Clear mentionedParticipantId after use
         stateRef.current.mentionedParticipantId = undefined;

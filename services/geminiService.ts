@@ -7,14 +7,22 @@ const AVATAR_COLORS = [
   '#3B82F6', '#6366F1', '#8B5CF6', '#EC4899', '#84CC16'
 ];
 
-// Reuse a single AbortController for API calls
+// Reuse a single AbortController for API calls (internal cancellation)
+// External callers can also provide their own AbortController via apiCall options
 let sharedAbortController: AbortController | null = null;
 
-async function apiCall<T>(endpoint: string, body: any, timeoutMs: number = 30000): Promise<T> {
-  // Abort any previous in-flight request
+interface ApiCallOptions {
+  signal?: AbortSignal;
+}
+
+async function apiCall<T>(endpoint: string, body: any, timeoutMs: number = 30000, options: ApiCallOptions = {}): Promise<T> {
+  // Abort any previous in-flight request using shared controller
   sharedAbortController?.abort();
   const controller = new AbortController();
   sharedAbortController = controller;
+
+  // Merge external signal if provided (external takes priority for early abort)
+  const signal = options.signal ?? controller.signal;
 
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -22,7 +30,7 @@ async function apiCall<T>(endpoint: string, body: any, timeoutMs: number = 30000
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      signal: controller.signal, // Now properly connected
+      signal,
     });
     clearTimeout(timeoutId);
     if (!response.ok) {
@@ -109,7 +117,8 @@ export const generateTurnForSpeaker = async (
   turnCount: number,
   maxTurns: number,
   isOpeningStatement: boolean = false,
-  mentionedParticipantId?: string
+  mentionedParticipantId?: string,
+  abortSignal?: AbortSignal
 ): Promise<{ text: string; stance?: string; stanceIntensity?: number; shouldWaitForUser: boolean }> => {
   try {
     return await apiCall('/api/generate_turn', {
@@ -122,7 +131,7 @@ export const generateTurnForSpeaker = async (
       maxTurns,
       isOpeningStatement,
       mentionedParticipantId,
-    }, 45000);  // 45s timeout for potentially long philosophical responses
+    }, 45000, { signal: abortSignal });  // 45s timeout for potentially long philosophical responses
   } catch (error) {
     console.error('Error generating turn:', error);
     throw error;

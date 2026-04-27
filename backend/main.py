@@ -414,7 +414,8 @@ Action is "WAIT" if force yielding, otherwise "CONTINUE".
     try:
         text = get_ai_response(prompt)
         raw = text.strip()
-        parts = raw.split('||')
+        # Split only on first 3 delimiters so message can legitimately contain ||
+        parts = raw.split('||', 3)
 
         stance = "NEUTRAL"
         intensity = 3
@@ -424,17 +425,20 @@ Action is "WAIT" if force yielding, otherwise "CONTINUE".
         if len(parts) >= 4:
             stance = parts[0].strip().upper() if parts[0] else "NEUTRAL"
             intensity = int(parts[1].strip()) if parts[1].strip().isdigit() else 3
-            message = parts[2].strip() if len(parts) > 2 else ""
-            action = parts[3].strip() if len(parts) > 3 else ""
+            message = parts[2].strip()
+            action = parts[3].strip()
         elif len(parts) == 3:
             if parts[1].strip().isdigit():
                 stance = parts[0].strip().upper() if parts[0] else "NEUTRAL"
                 intensity = int(parts[1].strip())
-                message = parts[2].strip() if len(parts) > 2 else ""
+                message = parts[2].strip()
             else:
                 stance = parts[0].strip().upper() if parts[0] else "NEUTRAL"
-                message = parts[1].strip() if len(parts) > 1 else ""
-                action = parts[2].strip() if len(parts) > 2 else ""
+                message = parts[1].strip()
+                action = parts[2].strip()
+        elif len(parts) == 2:
+            stance = parts[0].strip().upper() if parts[0] else "NEUTRAL"
+            message = parts[1].strip()
         else:
             message = raw
 
