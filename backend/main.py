@@ -117,8 +117,8 @@ def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int = 1024
     if json_mode:
         data["extra_body"]["response_format"] = {"type": "json_object"}
         data["messages"] = [{"role": "user", "content": prompt.rstrip() + "\n\nRespond with ONLY valid JSON. No explanation, no markdown."}]
-        # Remove max_tokens key entirely for JSON mode so API uses default
-        if data["max_tokens"] is None:
+        # For JSON mode, use a generous token limit (deletion approach can cause issues)
+        if json_mode:
             del data["max_tokens"]
 
     response = http_client.post(MINIMAX_BASE_URL, json=data, headers=headers)
@@ -525,14 +525,8 @@ CRITICAL REQUIREMENTS:
                 vp["most_memorable_quote"] = vp.get("key_points", [""])[0] if vp.get("key_points") else ""
         return data
     except Exception as e:
-        return {
-            "topic": req.topic,
-            "summary": "",
-            "core_viewpoints": [],
-            "key_discussion_moments": [],
-            "questions": [],
-            "conclusion": ""
-        }
+        print(f"Error generating summary: {e}")
+        raise ValueError(f"Summary generation failed: {e}")
 
 
 if __name__ == "__main__":
