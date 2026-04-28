@@ -270,9 +270,12 @@ export default function App() {
     };
 
     // Extract @mentioned participant from text and store for generate_turn call
+    // Use word boundary match: @Name followed by non-alphanumeric or end of string
     let mentionedId: string | undefined;
     for (const p of stateRef.current.participants) {
-      if (text.toLowerCase().includes(`@${p.name.toLowerCase()}`)) {
+      const escapedName = p.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const mentionPattern = new RegExp(`@${escapedName}($|\\s|[^a-zA-Z0-9])`, 'i');
+      if (mentionPattern.test(text)) {
         mentionedId = p.id;
         break;
       }

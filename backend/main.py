@@ -239,7 +239,11 @@ Identify this person. Return JSON: {{"name":"?","title":"?","stance":"?"}}"""
 
 @app.post("/api/predict_next_speaker")
 async def predict_next_speaker(req: PredictNextSpeakerRequest):
-    last_message = req.messageHistory[-1] if req.messageHistory else None
+    # Guard against empty message history
+    if not req.messageHistory:
+        return {"speakerId": req.participants[0].id if req.participants else "user"}
+
+    last_message = req.messageHistory[-1]
     last_text = last_message.text if last_message else ""
     is_host_last = last_message.senderId == "user" if last_message else False
 
@@ -259,6 +263,11 @@ async def predict_next_speaker(req: PredictNextSpeakerRequest):
         for m in req.messageHistory[-8:]
     ])
 
+    # Compute prev_speaker early to avoid lambda scope issues in f-string
+    prev_speaker = None
+    if is_host_last and len(req.messageHistory) >= 2 and req.messageHistory[-2].senderId != "user":
+        prev_speaker = next((p for p in req.participants if p.id == req.messageHistory[-2].senderId), None)
+
     prompt = f"""
 Topic: {req.topic}
 Speakers: {participants_list}
@@ -270,7 +279,7 @@ Current Turn: {req.turnCount}
 
 Rules:
 1. **HOST PRIORITY**: If the Host just spoke, their question/comment is the highest priority.
-{"2. **IMPLICIT CUE**: The Host just spoke after {prev_speaker.name} (ID: {prev_speaker.id}) without mentioning a name — this is an implicit cue for {prev_speaker.name} to respond, unless the Host's message is clearly asking a different specific person or is a general 'Anyone' question." if is_host_last and len(req.messageHistory) >= 2 and req.messageHistory[-2].senderId != "user" and (lambda p=next((p for p in req.participants if p.id == req.messageHistory[-2].senderId), None): p)() else "2. **DEBATE FLOW**: If no Host intervention, ensure variety. Do not let the same person speak twice in a row."}
+{"2. **IMPLICIT CUE**: The Host just spoke after {prev_speaker.name} (ID: {prev_speaker.id}) without mentioning a name — this is an implicit cue for {prev_speaker.name} to respond, unless the Host's message is clearly asking a different specific person or is a general 'Anyone' question." if prev_speaker else "2. **DEBATE FLOW**: If no Host intervention, ensure variety. Do not let the same person speak twice in a row."}
 3. **STALING**: If the debate is stalling, pick the person with the most opposing view.
 
 Return ONLY the ID (e.g., expert_1).

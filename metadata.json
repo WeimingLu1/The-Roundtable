@@ -1,7 +1,7 @@
 {
   "name": "The Roundtable (圆桌)",
   "description": "A high-quality intellectual roundtable. Host a debate with world-class experts.",
-  "version": "1.4.30",
+  "version": "1.4.31",
   "requestFramePermissions": [
     "microphone"
   ]
