@@ -1,5 +1,7 @@
 import os
 import random
+import re
+import json
 import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -174,8 +176,6 @@ async def generate_panel(req: GeneratePanelRequest):
 Language: {req.userContext.language}
 Select 3 diverse ALIVE experts for this debate. Return JSON:
 {{"participants": [{{"name": "?", "title": "?", "stance": "?"}}]}}"""
-    import json
-    import random
     try:
         text = await get_ai_response(prompt, json_mode=True, max_tokens=768)
         data = json.loads(text)
@@ -230,7 +230,6 @@ Language: {req.userContext.language}
 Identify this person. Return JSON: {{"name":"?","title":"?","stance":"?"}}"""
     try:
         text = await get_ai_response(prompt, json_mode=True, max_tokens=384)
-        import json
         data = json.loads(text)
         return data
     except Exception as e:
@@ -253,7 +252,6 @@ async def predict_next_speaker(req: PredictNextSpeakerRequest):
 
     # Check @Mentions FIRST — always prioritize explicit @mentions
     # Use word-boundary-aware matching: @Name followed by non-alphanumeric or end of string
-    import re
     for p in req.participants:
         pattern = r"@{}({}|\s|[^a-zA-Z0-9])".format(re.escape(p.name), "$")
         if re.search(pattern, last_text, re.IGNORECASE):
@@ -271,6 +269,12 @@ async def predict_next_speaker(req: PredictNextSpeakerRequest):
     if is_host_last and len(req.messageHistory) >= 2 and req.messageHistory[-2].senderId != "user":
         prev_speaker = next((p for p in req.participants if p.id == req.messageHistory[-2].senderId), None)
 
+    rule2 = (
+        f"2. **IMPLICIT CUE**: The Host just spoke after {prev_speaker.name} (ID: {prev_speaker.id}) without mentioning a name — this is an implicit cue for {prev_speaker.name} to respond, unless the Host's message is clearly asking a different specific person or is a general 'Anyone' question."
+        if prev_speaker
+        else "2. **DEBATE FLOW**: If no Host intervention, ensure variety. Do not let the same person speak twice in a row."
+    )
+
     prompt = f"""
 Topic: {req.topic}
 Speakers: {participants_list}
@@ -282,7 +286,7 @@ Current Turn: {req.turnCount}
 
 Rules:
 1. **HOST PRIORITY**: If the Host just spoke, their question/comment is the highest priority.
-{"2. **IMPLICIT CUE**: The Host just spoke after {prev_speaker.name if prev_speaker else "the previous speaker"} (ID: {prev_speaker.id if prev_speaker else "unknown"}) without mentioning a name — this is an implicit cue for {prev_speaker.name if prev_speaker else "them"} to respond, unless the Host's message is clearly asking a different specific person or is a general 'Anyone' question." if prev_speaker else "2. **DEBATE FLOW**: If no Host intervention, ensure variety. Do not let the same person speak twice in a row."}
+{rule2}
 3. **STALLING**: If the debate is stalling, pick the person with the most opposing view.
 
 Return ONLY the ID (e.g., expert_1).
@@ -356,8 +360,6 @@ Output: Just the spoken text. No labels, no greetings.
     last_message = req.messageHistory[-1] if req.messageHistory else None
     host_just_spoke = last_message.senderId == "user" if last_message else False
     last_was_pivot = last_message.stance == "PIVOT" if last_message and last_message.stance else False
-
-    import random
     is_breadth_turn = not last_was_pivot and random.random() < 0.25
 
     strategy = "**STRATEGY: DIVERGE (Breadth)**. STOP dwelling on the current specific point. Abruptly SHIFT the lens to a NEW dimension. **MANDATORY**: Use stance 'PIVOT'." if is_breadth_turn else "**STRATEGY: CONVERGE (Depth)**. Drill deeper into the specific logic of the previous speaker."
@@ -519,7 +521,6 @@ CRITICAL REQUIREMENTS:
 """
     try:
         text = await get_ai_response(prompt, json_mode=True, max_tokens=1024)
-        import json
         data = json.loads(text)
         # Validate required fields
         if not data.get("topic"):
