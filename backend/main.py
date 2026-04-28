@@ -282,8 +282,8 @@ Current Turn: {req.turnCount}
 
 Rules:
 1. **HOST PRIORITY**: If the Host just spoke, their question/comment is the highest priority.
-{"2. **IMPLICIT CUE**: The Host just spoke after {prev_speaker.name} (ID: {prev_speaker.id}) without mentioning a name — this is an implicit cue for {prev_speaker.name} to respond, unless the Host's message is clearly asking a different specific person or is a general 'Anyone' question." if prev_speaker else "2. **DEBATE FLOW**: If no Host intervention, ensure variety. Do not let the same person speak twice in a row."}
-3. **STALING**: If the debate is stalling, pick the person with the most opposing view.
+{"2. **IMPLICIT CUE**: The Host just spoke after {prev_speaker.name if prev_speaker else "the previous speaker"} (ID: {prev_speaker.id if prev_speaker else "unknown"}) without mentioning a name — this is an implicit cue for {prev_speaker.name if prev_speaker else "them"} to respond, unless the Host's message is clearly asking a different specific person or is a general 'Anyone' question." if prev_speaker else "2. **DEBATE FLOW**: If no Host intervention, ensure variety. Do not let the same person speak twice in a row."}
+3. **STALLING**: If the debate is stalling, pick the person with the most opposing view.
 
 Return ONLY the ID (e.g., expert_1).
 """
