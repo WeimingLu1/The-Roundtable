@@ -3,7 +3,7 @@ import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import List
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -128,8 +128,8 @@ async def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int 
     if json_mode:
         data["extra_body"]["response_format"] = {"type": "json_object"}
         data["messages"] = [{"role": "user", "content": prompt.rstrip() + "\n\nRespond with ONLY valid JSON. No explanation, no markdown."}]
-        # For JSON mode, use a generous token limit instead of None to avoid API issues
-        data["max_tokens"] = 4096
+        # For JSON mode, use a generous token limit to avoid API issues
+        data["max_tokens"] = max(4096, max_tokens)
 
     response = await client.post(MINIMAX_BASE_URL, json=data, headers=headers)
     response.raise_for_status()
