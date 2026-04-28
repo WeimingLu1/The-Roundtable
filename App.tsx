@@ -141,6 +141,10 @@ export default function App() {
       return;
     }
 
+    // Capture mentionedParticipantId early to avoid stale closure issues — do NOT clear it here;
+    // handleUserMessage sets it before triggering this effect and the backend needs it.
+    const capturedMentionedId = mentionedParticipantId;
+
     setIsTyping(true);
     turnInProgressRef.current = true;
 
@@ -156,11 +160,9 @@ export default function App() {
           currentAutoDebateCount,
           currentRoundLimitVal,
           false,
-          mentionedParticipantId,
+          capturedMentionedId,
           abortControllerRef.current!.signal
         );
-        // Clear mentionedParticipantId after use
-        stateRef.current.mentionedParticipantId = undefined;
         return { nextSpeakerId, result };
       })
       .then(({ nextSpeakerId, result }) => {

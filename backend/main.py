@@ -1,9 +1,10 @@
 import os
+import random
 import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -277,6 +278,7 @@ History:
 {recent_history}
 
 Task: Pick the ID of the next speaker.
+Current Turn: {req.turnCount}
 
 Rules:
 1. **HOST PRIORITY**: If the Host just spoke, their question/comment is the highest priority.
@@ -296,7 +298,6 @@ Return ONLY the ID (e.g., expert_1).
         last_sender_id = last_message.senderId if last_message else None
         other_speakers = [p for p in req.participants if p.id != last_sender_id] if last_sender_id else list(req.participants)
         if other_speakers:
-            import random
             return {"speakerId": random.choice(other_speakers).id}
         # Fallback: return any participant if other_speakers is empty
         return {"speakerId": req.participants[0].id}
