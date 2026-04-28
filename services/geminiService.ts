@@ -1,6 +1,6 @@
 import { Participant, Message, RoleType, UserContext, Summary } from '../types';
 
-const API_BASE = 'http://localhost:3001';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
 const AVATAR_COLORS = [
   '#EF4444', '#F97316', '#F59E0B', '#10B981', '#06B6D4',

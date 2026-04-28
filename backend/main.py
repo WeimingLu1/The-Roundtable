@@ -21,9 +21,9 @@ app.add_middleware(
 )
 
 # Initialize MiniMax API client
-api_key = os.environ.get("ANTHROPIC_API_KEY")
+api_key = os.environ.get("MINIMAX_API_KEY")
 if not api_key:
-    raise ValueError("ANTHROPIC_API_KEY environment variable is required")
+    raise ValueError("MINIMAX_API_KEY environment variable is required")
 
 MODEL = "MiniMax-M2"  # Model name for MiniMax API
 MINIMAX_BASE_URL = "https://api.minimax.com/v1/messages"
@@ -187,7 +187,7 @@ Select 3 diverse ALIVE experts for this debate. Return JSON:
         raise ValueError(f"Panel generation failed: {e}")
 
     # Validate: must have exactly 3 participants with required fields
-    if not isinstance(participants, list) or len(participants) == 0:
+    if not isinstance(participants, list) or not participants:
         raise ValueError("Panel API returned no participants")
 
     # Graceful degradation: if fewer than 3, generate placeholders
@@ -256,7 +256,7 @@ async def predict_next_speaker(req: PredictNextSpeakerRequest):
     import re
     for p in req.participants:
         escaped_name = re.escape(p.name)
-        pattern = rf"@{escaped_name}($|\s|[^a-zA-Z0-9])"
+        pattern = r"@{}({}|\s|[^a-zA-Z0-9])".format(re.escape(p.name), "$")
         if re.search(pattern, last_text, re.IGNORECASE):
             return {"speakerId": p.id}
 
