@@ -48,30 +48,24 @@ export default function App() {
 
   // --- DISCUSSION LOOP ---
   // Single effect that handles all discussion state machine transitions
+  // IMPORTANT: This effect ONLY sets up the abort controller and synchronizes stateRef.
+  // It does NOT set turnInProgressRef (that's done by the inner effects).
+  // It does NOT abort in-flight requests (that would race with inner effect async work).
   useEffect(() => {
     // Guards - must be outside state capture
     if (stateRef.current.isWaitingForUser || stateRef.current.isSummarizing) return;
     if (isTyping || thinkingSpeakerId) return;
 
-    // Check turnInProgress BEFORE starting to prevent race conditions
-    if (turnInProgressRef.current) return;
-    turnInProgressRef.current = true;
-
     // Keep stateRef in sync with latest state (includes mentionedParticipantId)
     stateRef.current = { appState, topic, participants, messages, userContext, autoDebateCount, currentRoundLimit, openingSpeakerIndex, isWaitingForUser, isSummarizing, mentionedParticipantId: stateRef.current.mentionedParticipantId };
 
-    // Abort any in-flight request from previous run
+    // Create a new AbortController for this discussion cycle
     abortControllerRef.current?.abort();
-    const abortController = new AbortController();
-    abortControllerRef.current = abortController;
-
-    // Use state snapshot captured at effect start to avoid stale closures
-    const { appState: currentAppState, topic: currentTopic, participants: currentParticipants, messages: currentMessages, userContext: currentUserContext, autoDebateCount: currentAutoDebateCount, currentRoundLimit: currentRoundLimitVal, openingSpeakerIndex: currentOpeningSpeakerIndex } = stateRef.current;
+    abortControllerRef.current = new AbortController();
 
     // Cleanup: abort request on re-run or unmount
-    // NOTE: Do NOT reset turnInProgressRef here - it's managed by the discussion effect
     return () => {
-      abortController.abort();
+      abortControllerRef.current?.abort();
     };
   }, [isTyping, thinkingSpeakerId, appState, isWaitingForUser, isSummarizing, openingSpeakerIndex, autoDebateCount, participants, topic, userContext, currentRoundLimit]);
 
@@ -80,7 +74,6 @@ export default function App() {
     if (stateRef.current.appState !== AppState.OPENING_STATEMENTS) return;
     if (stateRef.current.isWaitingForUser || stateRef.current.isSummarizing) return;
     if (isTyping || thinkingSpeakerId) return;
-    if (!turnInProgressRef.current) return; // Coordinator hasn't set up yet
 
     const { participants: currentParticipants, topic: currentTopic, messages: currentMessages, userContext: currentUserContext } = stateRef.current;
     const currentOpeningSpeakerIndex = stateRef.current.openingSpeakerIndex;
@@ -100,6 +93,7 @@ export default function App() {
 
     setThinkingSpeakerId(speaker.id);
     setIsTyping(true);
+    turnInProgressRef.current = true;
 
     generateTurnForSpeaker(
       speaker.id,
@@ -139,7 +133,6 @@ export default function App() {
     if (stateRef.current.appState !== AppState.DISCUSSION) return;
     if (stateRef.current.isWaitingForUser || stateRef.current.isSummarizing) return;
     if (isTyping || thinkingSpeakerId) return;
-    if (!turnInProgressRef.current) return; // Coordinator hasn't set up yet
 
     const { topic: currentTopic, participants: currentParticipants, messages: currentMessages, userContext: currentUserContext, autoDebateCount: currentAutoDebateCount, currentRoundLimit: currentRoundLimitVal, mentionedParticipantId } = stateRef.current;
 
@@ -149,6 +142,7 @@ export default function App() {
     }
 
     setIsTyping(true);
+    turnInProgressRef.current = true;
 
     predictNextSpeaker(currentTopic, currentParticipants, currentMessages, currentUserContext, currentAutoDebateCount)
       .then(async nextSpeakerId => {
