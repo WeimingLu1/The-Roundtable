@@ -252,8 +252,12 @@ async def predict_next_speaker(req: PredictNextSpeakerRequest):
         return {"speakerId": "user"}
 
     # Check @Mentions FIRST — always prioritize explicit @mentions
+    # Use word-boundary-aware matching: @Name followed by non-alphanumeric or end of string
+    import re
     for p in req.participants:
-        if f"@{p.name.lower()}" in last_text.lower():
+        escaped_name = re.escape(p.name)
+        pattern = rf"@{escaped_name}($|\s|[^a-zA-Z0-9])"
+        if re.search(pattern, last_text, re.IGNORECASE):
             return {"speakerId": p.id}
 
     # Format participants
@@ -537,18 +541,28 @@ CRITICAL REQUIREMENTS:
                 vp["most_memorable_quote"] = vp.get("key_points", [""])[0] if vp.get("key_points") else ""
         # Validate core_viewpoints count matches participants
         if len(data.get("core_viewpoints", [])) != len(req.participants):
-            # Try to pad with placeholder entries or trim to match
-            if len(data.get("core_viewpoints", [])) < len(req.participants):
-                for i, p in enumerate(req.participants):
-                    if i >= len(data["core_viewpoints"]):
-                        data["core_viewpoints"].append({
-                            "speaker": p.name,
-                            "title": p.title,
-                            "stance": p.stance,
-                            "key_points": [],
-                            "most_memorable_quote": ""
-                        })
-            else:
+            existing_speakers = {vp.get("speaker") for vp in data.get("core_viewpoints", [])}
+            # Pad with missing participants (not by index, but by name lookup)
+            for p in req.participants:
+                if p.name not in existing_speakers:
+                    data["core_viewpoints"].append({
+                        "speaker": p.name,
+                        "title": p.title,
+                        "stance": p.stance,
+                        "key_points": [],
+                        "most_memorable_quote": ""
+                    })
+            # If still too few, also handle any undefined/null speaker entries
+            while len(data["core_viewpoints"]) < len(req.participants):
+                data["core_viewpoints"].append({
+                    "speaker": "Unknown",
+                    "title": "Guest",
+                    "stance": "No viewpoint recorded.",
+                    "key_points": [],
+                    "most_memorable_quote": ""
+                })
+            # Trim excess
+            if len(data["core_viewpoints"]) > len(req.participants):
                 data["core_viewpoints"] = data["core_viewpoints"][:len(req.participants)]
         return data
     except Exception as e:
