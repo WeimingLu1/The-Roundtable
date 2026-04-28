@@ -16,25 +16,29 @@ interface ApiCallOptions {
 
 async function apiCall<T>(endpoint: string, body: any, timeoutMs: number = 30000, options: ApiCallOptions = {}): Promise<T> {
   const controller = new AbortController();
-
-  // Merge external signal if provided (external takes priority for early abort)
-  const signal = options.signal ?? controller.signal;
-
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  let done = false;
+  const cleanup = () => { if (!done) { done = true; clearTimeout(timeoutId); } };
+
   try {
+    // Prefer external signal when provided; timeout abort is still wired so it
+    // cleans up its own timer regardless of which signal fires first.
+    const signal = options.signal ?? controller.signal;
+
     const response = await fetch(`${API_BASE}${endpoint}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       signal,
     });
-    clearTimeout(timeoutId);
+    cleanup();
     if (!response.ok) {
       throw new Error(`API error: ${response.status}`);
     }
     return response.json();
   } catch (e) {
-    clearTimeout(timeoutId);
+    cleanup();
     throw e;
   }
 }
@@ -50,7 +54,7 @@ export const generateRandomTopic = async (language: string, abortSignal?: AbortS
 };
 
 export const generatePanel = async (topic: string, userContext: UserContext, abortSignal?: AbortSignal): Promise<Participant[]> => {
-  const res = await apiCall<{ participants: any[] }>('/api/generate_panel', { topic, userContext }, 90000, { signal: abortSignal });
+  const res = await apiCall<{ participants: any[] }>('/api/generate_panel', { topic, userContext }, 30000, { signal: abortSignal });
 
   return res.participants.map((p: any, index: number) => ({
     id: p.id ?? `expert_${index}`,

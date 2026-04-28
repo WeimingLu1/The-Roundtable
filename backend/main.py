@@ -259,18 +259,6 @@ async def predict_next_speaker(req: PredictNextSpeakerRequest):
         for m in req.messageHistory[-8:]
     ])
 
-    implicit_cue_prompt = ""
-    if is_host_last and len(req.messageHistory) >= 2:
-        prev_message = req.messageHistory[-2]
-        if prev_message.senderId != "user":
-            prev_speaker = next((p for p in req.participants if p.id == prev_message.senderId), None)
-            if prev_speaker:
-                implicit_cue_prompt = f"""
-CRITICAL RULE: The HOST just spoke after {prev_speaker.name} (ID: {prev_speaker.id}) and did not explicitly mention a name.
-This acts as an IMPLICIT CUE to {prev_speaker.name}.
-You MUST pick {prev_speaker.id} to respond to the Host, unless the Host's message ("{last_text[:50]}...") is clearly asking a different specific person or is a general "Anyone" question.
-"""
-
     prompt = f"""
 Topic: {req.topic}
 Speakers: {participants_list}
@@ -282,9 +270,8 @@ Current Turn: {req.turnCount}
 
 Rules:
 1. **HOST PRIORITY**: If the Host just spoke, their question/comment is the highest priority.
-{implicit_cue_prompt}
-2. **DEBATE FLOW**: If no Host intervention, ensure variety. Do not let the same person speak twice in a row.
-3. **STALLING**: If the debate is stalling, pick the person with the most opposing view.
+{"2. **IMPLICIT CUE**: The Host just spoke after {prev_speaker.name} (ID: {prev_speaker.id}) without mentioning a name — this is an implicit cue for {prev_speaker.name} to respond, unless the Host's message is clearly asking a different specific person or is a general 'Anyone' question." if is_host_last and len(req.messageHistory) >= 2 and req.messageHistory[-2].senderId != "user" and (lambda p=next((p for p in req.participants if p.id == req.messageHistory[-2].senderId), None): p)() else "2. **DEBATE FLOW**: If no Host intervention, ensure variety. Do not let the same person speak twice in a row."}
+3. **STALING**: If the debate is stalling, pick the person with the most opposing view.
 
 Return ONLY the ID (e.g., expert_1).
 """
