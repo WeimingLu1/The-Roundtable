@@ -9,10 +9,11 @@ load_dotenv()
 
 app = FastAPI()
 
-# CORS
+# CORS - allow all origins in production (FastAPI Starlette default behavior)
+# Restrict to specific origins if needed via environment variable
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origin_regex=r"https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -24,10 +25,16 @@ if not api_key:
     raise ValueError("ANTHROPIC_API_KEY environment variable is required")
 
 MODEL = "MiniMax-M2"  # Model name for MiniMax API
-MINIMAX_BASE_URL = "https://api.minimax.com/anthropic/v1/messages"
+MINIMAX_BASE_URL = "https://api.minimax.com/v1/messages"
 
-# Reuse a single httpx client for connection pooling
-http_client = httpx.Client(timeout=120.0)
+# Use async httpx client to avoid blocking FastAPI's async event loop
+_http_client: httpx.AsyncClient | None = None
+
+async def get_http_client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None:
+        _http_client = httpx.AsyncClient(timeout=120.0)
+    return _http_client
 
 AVATAR_COLORS = [
     '#EF4444', '#F97316', '#F59E0B', '#10B981', '#06B6D4',
@@ -102,7 +109,8 @@ class GenerateSummaryRequest(BaseModel):
 
 
 # --- Helper ---
-def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int = 1024) -> str:
+async def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int = 1024) -> str:
+    client = await get_http_client()
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -123,7 +131,7 @@ def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int = 1024
         # For JSON mode, use a generous token limit instead of None to avoid API issues
         data["max_tokens"] = 4096
 
-    response = http_client.post(MINIMAX_BASE_URL, json=data, headers=headers)
+    response = await client.post(MINIMAX_BASE_URL, json=data, headers=headers)
     response.raise_for_status()
     result = response.json()
 
@@ -146,11 +154,11 @@ def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int = 1024
 
 # --- Endpoints ---
 @app.post("/api/generate_random_topic")
-def generate_random_topic(req: GenerateRandomTopicRequest):
+async def generate_random_topic(req: GenerateRandomTopicRequest):
     lang_instruction = "in Chinese" if req.language.lower() == "chinese" else "in English" if req.language.lower() == "english" else f"in {req.language}"
     prompt = f"Generate a short, interesting debate topic {lang_instruction}. Make it thought-provoking and suitable for panel discussion. Respond with ONLY the topic text, no explanation."
     try:
-        text = get_ai_response(prompt, max_tokens=512)
+        text = await get_ai_response(prompt, max_tokens=512)
         if not text or len(text.strip()) < 5:
             raise ValueError("Empty or too short response from AI")
         return {"topic": text.strip()}
@@ -160,7 +168,7 @@ def generate_random_topic(req: GenerateRandomTopicRequest):
 
 
 @app.post("/api/generate_panel")
-def generate_panel(req: GeneratePanelRequest):
+async def generate_panel(req: GeneratePanelRequest):
     prompt = f"""Topic: {req.topic}
 Language: {req.userContext.language}
 Select 3 diverse ALIVE experts for this debate. Return JSON:
@@ -168,7 +176,7 @@ Select 3 diverse ALIVE experts for this debate. Return JSON:
     import json
     import random
     try:
-        text = get_ai_response(prompt, json_mode=True, max_tokens=768)
+        text = await get_ai_response(prompt, json_mode=True, max_tokens=768)
         data = json.loads(text)
         participants = data.get("participants", [])
     except Exception as e:
@@ -205,13 +213,13 @@ Select 3 diverse ALIVE experts for this debate. Return JSON:
 
 
 @app.post("/api/generate_single_participant")
-def generate_single_participant(req: GenerateSingleParticipantRequest):
+async def generate_single_participant(req: GenerateSingleParticipantRequest):
     prompt = f"""User: {req.inputQuery}
 Topic: {req.topic}
 Language: {req.userContext.language}
 Identify this person. Return JSON: {{"name":"?","title":"?","stance":"?"}}"""
     try:
-        text = get_ai_response(prompt, json_mode=True, max_tokens=384)
+        text = await get_ai_response(prompt, json_mode=True, max_tokens=384)
         import json
         data = json.loads(text)
         return data
@@ -220,7 +228,7 @@ Identify this person. Return JSON: {{"name":"?","title":"?","stance":"?"}}"""
 
 
 @app.post("/api/predict_next_speaker")
-def predict_next_speaker(req: PredictNextSpeakerRequest):
+async def predict_next_speaker(req: PredictNextSpeakerRequest):
     last_message = req.messageHistory[-1] if req.messageHistory else None
     last_text = last_message.text if last_message else ""
     is_host_last = last_message.senderId == "user" if last_message else False
@@ -270,7 +278,7 @@ Rules:
 Return ONLY the ID (e.g., expert_1).
 """
     try:
-        text = get_ai_response(prompt)
+        text = await get_ai_response(prompt)
         speaker_id = text.strip()
         valid = next((p.id for p in req.participants if p.id == speaker_id), None)
         if valid:
@@ -288,7 +296,7 @@ Return ONLY the ID (e.g., expert_1).
 
 
 @app.post("/api/generate_turn")
-def generate_turn(req: GenerateTurnRequest):
+async def generate_turn(req: GenerateTurnRequest):
     # Validate speakerId exists
     speaker = next((p for p in req.participants if p.id == req.speakerId), None)
     if not speaker:
@@ -313,7 +321,7 @@ Task: State your core argument clearly and naturally.
 Output: Just the spoken text. No labels, no greetings.
 """
         try:
-            text = get_ai_response(prompt)
+            text = await get_ai_response(prompt)
             if not text or len(text.strip()) < 3:
                 raise ValueError("Opening statement too short or empty")
             # Reject greeting-only responses
@@ -398,7 +406,7 @@ Examples:
 Action is "WAIT" if force yielding, otherwise "CONTINUE".
 """
     try:
-        text = get_ai_response(prompt)
+        text = await get_ai_response(prompt)
         raw = text.strip()
         # Split only on first 3 delimiters so message can legitimately contain ||
         parts = raw.split('||', 3)
@@ -442,7 +450,7 @@ Action is "WAIT" if force yielding, otherwise "CONTINUE".
 
 
 @app.post("/api/generate_summary")
-def generate_summary(req: GenerateSummaryRequest):
+async def generate_summary(req: GenerateSummaryRequest):
     transcript = "\n".join([
         f"{'HOST' if m.senderId == 'user' else next((p.name for p in req.participants if p.id == m.senderId), 'Unknown')}: {m.text}"
         for m in req.messageHistory
@@ -501,7 +509,7 @@ CRITICAL REQUIREMENTS:
 - Use the EXACT participant names as provided in the participant list above.
 """
     try:
-        text = get_ai_response(prompt, json_mode=True, max_tokens=1024)
+        text = await get_ai_response(prompt, json_mode=True, max_tokens=1024)
         import json
         data = json.loads(text)
         # Validate required fields

@@ -51,15 +51,14 @@ export const generateRandomTopic = async (language: string, abortSignal?: AbortS
 
 export const generatePanel = async (topic: string, userContext: UserContext, abortSignal?: AbortSignal): Promise<Participant[]> => {
   const res = await apiCall<{ participants: any[] }>('/api/generate_panel', { topic, userContext }, 90000, { signal: abortSignal });
-  const shuffledColors = [...AVATAR_COLORS].sort(() => 0.5 - Math.random());
 
   return res.participants.map((p: any, index: number) => ({
-    id: `expert_${index}`,
+    id: p.id ?? `expert_${index}`,
     name: p.name,
     title: p.title,
     stance: p.stance,
-    roleType: 'expert',
-    color: shuffledColors[index % shuffledColors.length],
+    roleType: p.roleType ?? 'expert',
+    color: p.color ?? AVATAR_COLORS[index % AVATAR_COLORS.length],
   }));
 };
 

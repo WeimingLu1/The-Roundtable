@@ -71,7 +71,7 @@ export const InputArea: React.FC<InputAreaProps> = ({
     `}>
       
       {/* Mention Popup */}
-      {showMentionPopup && !disabled && participants.length > 0 && (
+      {showMentionPopup && participants.length > 0 && (
         <div className="absolute bottom-24 left-4 bg-md-surface-container rounded-xl shadow-elevation-3 overflow-hidden min-w-[180px] animate-fade-in-up border border-white/10 z-[60]">
             <div className="px-4 py-2 bg-md-surface-container-low text-xs font-bold text-md-secondary">Mention Guest</div>
             {participants.map(p => (
