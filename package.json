@@ -1,7 +1,7 @@
 {
   "name": "the-roundtable-(圆桌)",
   "private": true,
-  "version": "1.4.31",
+  "version": "1.4.35",
   "type": "module",
   "scripts": {
     "dev": "vite",

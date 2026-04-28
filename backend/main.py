@@ -255,7 +255,6 @@ async def predict_next_speaker(req: PredictNextSpeakerRequest):
     # Use word-boundary-aware matching: @Name followed by non-alphanumeric or end of string
     import re
     for p in req.participants:
-        escaped_name = re.escape(p.name)
         pattern = r"@{}({}|\s|[^a-zA-Z0-9])".format(re.escape(p.name), "$")
         if re.search(pattern, last_text, re.IGNORECASE):
             return {"speakerId": p.id}
@@ -446,7 +445,7 @@ Action is "WAIT" if force yielding, otherwise "CONTINUE".
         else:
             message = raw
 
-        should_wait = "WAIT" in action or force_return_to_host or (f"@{req.userContext.nickname}" in message and req.turnCount > 0)
+        should_wait = "WAIT" in action or force_return_to_host or (f"@{req.userContext.nickname}" in message and "?" in message and req.turnCount > 0)
 
         return {
             "text": message,
