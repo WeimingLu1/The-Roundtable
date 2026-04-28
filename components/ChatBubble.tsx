@@ -22,7 +22,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, sender, partici
 
   // Helper to escape characters for Regex
   const escapeRegExp = (string: string) => {
-    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '$$&');
   };
 
   // 1. First Pass: Handle @Mentions

@@ -143,7 +143,9 @@ export default function App() {
 
     // Capture mentionedParticipantId early to avoid stale closure issues — do NOT clear it here;
     // handleUserMessage sets it before triggering this effect and the backend needs it.
+    // After consuming it, clear it to prevent stale state on subsequent turns.
     const capturedMentionedId = mentionedParticipantId;
+    stateRef.current.mentionedParticipantId = undefined;
 
     setIsTyping(true);
     turnInProgressRef.current = true;
