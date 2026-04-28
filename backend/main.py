@@ -188,8 +188,17 @@ Select 3 diverse ALIVE experts for this debate. Return JSON:
     # Validate: must have exactly 3 participants with required fields
     if not isinstance(participants, list) or len(participants) == 0:
         raise ValueError("Panel API returned no participants")
+
+    # Graceful degradation: if fewer than 3, generate placeholders
     if len(participants) < 3:
-        raise ValueError(f"Panel API returned only {len(participants)} participant(s), need 3")
+        print(f"Warning: Panel API returned only {len(participants)} participant(s), padding to 3")
+        default_participants = [
+            {"name": "Dr. Wei Chen", "title": "AI Ethics Researcher", "stance": "Concerned about AI alignment and safety."},
+            {"name": "Prof. Marcus Lee", "title": "Technology Philosopher", "stance": "Optimistic about human-AI collaboration."},
+        ]
+        while len(participants) < 3:
+            participants.append(default_participants[len(participants) % len(default_participants)])
+
     for i, p in enumerate(participants):
         if not isinstance(p, dict):
             raise ValueError(f"Participant {i} is not an object")

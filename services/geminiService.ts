@@ -95,7 +95,6 @@ export const predictNextSpeaker = async (
       participants,
       messageHistory,
       userContext,
-      turnCount,
     }, 30000, { signal: abortSignal });
     return res.speakerId;
   } catch (e) {
