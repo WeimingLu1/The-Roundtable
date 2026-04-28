@@ -60,8 +60,8 @@
 ### 1. 环境准备
 确保你拥有 MiniMax API Key。在 `.env` 文件中配置：
 
-```env
-ANTHROPIC_API_KEY=***
+```
+MINIMAX_API_KEY=***
 ```
 
 ### 2. 交互指南
