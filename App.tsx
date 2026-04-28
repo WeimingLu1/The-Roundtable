@@ -196,7 +196,7 @@ export default function App() {
         setIsTyping(false);
         turnInProgressRef.current = false;
       });
-  }, [isTyping, thinkingSpeakerId, autoDebateCount, isWaitingForUser, appState]);
+  }, [isTyping, thinkingSpeakerId, autoDebateCount, isWaitingForUser, isSummarizing, appState, participants, topic, userContext, messages, currentRoundLimit]);
 
 
   // --- HANDLERS ---
