@@ -166,7 +166,7 @@ async def generate_random_topic(req: GenerateRandomTopicRequest):
             raise ValueError("Empty or too short response from AI")
         return {"topic": text.strip()}
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error generating random topic: {e}")
         return {"topic": "Do we live in a simulation?"}
 
 

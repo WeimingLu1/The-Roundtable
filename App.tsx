@@ -130,8 +130,13 @@ export default function App() {
 
   // Effect for discussion phase
   useEffect(() => {
+    // CRITICAL: isWaitingForUser=true means the LAST turn was a WAIT turn (user must speak next).
+    // But once all opening statements are done, the first DISCUSSION turn should run even when
+    // isWaitingForUser=true, because no AI turn has happened yet in DISCUSSION state.
+    const hasMessagesInDiscussion = stateRef.current.messages.some(m => m.senderId !== 'user');
     if (stateRef.current.appState !== AppState.DISCUSSION) return;
-    if (stateRef.current.isWaitingForUser || stateRef.current.isSummarizing) return;
+    if (stateRef.current.isSummarizing) return;
+    if (stateRef.current.isWaitingForUser && hasMessagesInDiscussion) return;
     if (isTyping || thinkingSpeakerId) return;
 
     const { topic: currentTopic, participants: currentParticipants, messages: currentMessages, userContext: currentUserContext, autoDebateCount: currentAutoDebateCount, currentRoundLimit: currentRoundLimitVal, mentionedParticipantId } = stateRef.current;
@@ -330,6 +335,7 @@ export default function App() {
       setThinkingSpeakerId(null);
       setIsSummarizing(false);
       setUpdatingParticipantId(null);
+      stateRef.current.mentionedParticipantId = undefined;
   };
 
   const handleCancelBackToHome = () => {
