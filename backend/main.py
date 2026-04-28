@@ -12,6 +12,10 @@ load_dotenv()
 
 app = FastAPI()
 
+class OpeningStatementRejected(Exception):
+    """Raised when the AI produces a greeting instead of a substantive opening."""
+    pass
+
 # CORS - allow all origins in production (FastAPI Starlette default behavior)
 # Restrict to specific origins if needed via environment variable
 app.add_middleware(
@@ -341,13 +345,15 @@ Output: Just the spoken text. No labels, no greetings.
             greeting_patterns = ["hello", "hi ", "good morning", "good afternoon", "good evening", "很高兴", "大家好", "各位好", "很高兴认识"]
             text_lower = text.strip().lower()
             if any(text_lower.startswith(g) for g in greeting_patterns):
-                raise ValueError(f"Opening statement starts with greeting: {text[:30]}")
+                raise OpeningStatementRejected(f"Opening statement starts with greeting: {text[:50]}")
             return {"text": text.strip(), "stance": "NEUTRAL", "stanceIntensity": 3, "shouldWaitForUser": False}
+        except OpeningStatementRejected:
+            raise  # Re-raise with original message for retry
         except ValueError:
             raise  # Re-raise ValueError as-is for intentional rejections
         except Exception as e:
             print(f"Opening statement error: {e}")
-            raise ValueError(f"Opening statement generation failed: {e}")
+            raise OpeningStatementRejected(f"Opening statement generation failed: {e}")
 
     # Discussion turn
     recent_history = "\n\n".join([
@@ -427,25 +433,31 @@ Action is "WAIT" if force yielding, otherwise "CONTINUE".
         message = ""
         action = ""
 
-        if len(parts) >= 4:
-            stance = parts[0].strip().upper() if parts[0] else "NEUTRAL"
-            intensity = int(parts[1].strip()) if parts[1].strip().isdigit() else 3
-            message = parts[2].strip()
-            action = parts[3].strip()
-        elif len(parts) == 3:
-            if parts[1].strip().isdigit():
+        try:
+            if len(parts) >= 4:
                 stance = parts[0].strip().upper() if parts[0] else "NEUTRAL"
-                intensity = int(parts[1].strip())
+                intensity = int(parts[1].strip()) if parts[1].strip().isdigit() else 3
                 message = parts[2].strip()
-            else:
+                action = parts[3].strip()
+            elif len(parts) == 3:
+                if parts[1].strip().isdigit():
+                    stance = parts[0].strip().upper() if parts[0] else "NEUTRAL"
+                    intensity = int(parts[1].strip())
+                    message = parts[2].strip()
+                else:
+                    stance = parts[0].strip().upper() if parts[0] else "NEUTRAL"
+                    message = parts[1].strip()
+                    action = parts[2].strip()
+            elif len(parts) == 2:
                 stance = parts[0].strip().upper() if parts[0] else "NEUTRAL"
                 message = parts[1].strip()
-                action = parts[2].strip()
-        elif len(parts) == 2:
-            stance = parts[0].strip().upper() if parts[0] else "NEUTRAL"
-            message = parts[1].strip()
-        else:
-            message = raw
+            else:
+                message = raw
+        except ValueError:
+            # Malformed output — fall back to raw text
+            stance = "NEUTRAL"
+            intensity = 3
+            action = ""
 
         should_wait = "WAIT" in action or force_return_to_host or (f"@{req.userContext.nickname}" in message and "?" in message and req.turnCount > 0)
 

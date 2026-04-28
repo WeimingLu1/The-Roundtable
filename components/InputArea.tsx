@@ -41,8 +41,15 @@ export const InputArea: React.FC<InputAreaProps> = ({
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const val = e.target.value;
       setText(val);
-      if (val.endsWith('@')) setShowMentionPopup(true);
-      else if (!val.includes('@')) setShowMentionPopup(false);
+      // Show popup when user has typed @ followed by non-space characters (partial mention)
+      // Hide only when there's a space after the last @
+      const lastAtIndex = val.lastIndexOf('@');
+      if (lastAtIndex === -1) {
+          setShowMentionPopup(false);
+      } else {
+          const textAfterAt = val.slice(lastAtIndex);
+          setShowMentionPopup(!textAfterAt.includes(' '));
+      }
   };
 
   const insertMention = (name: string) => {

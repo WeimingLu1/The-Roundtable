@@ -25,6 +25,7 @@ export default function App() {
 
   const [isWaitingForUser, setIsWaitingForUser] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [swappingParticipantId, setSwappingParticipantId] = useState<string | null>(null);
 
   // Logic Control
   const [autoDebateCount, setAutoDebateCount] = useState(0);
@@ -235,6 +236,7 @@ export default function App() {
 
   const handleSwapParticipant = async (id: string, inputQuery: string) => {
       if (!userContext) return;
+      setSwappingParticipantId(null);
       abortControllerRef.current?.abort();
       abortControllerRef.current = new AbortController();
       setUpdatingParticipantId(id);
@@ -257,6 +259,10 @@ export default function App() {
       } finally {
           setUpdatingParticipantId(null);
       }
+  };
+
+  const handleStartSwap = (id: string) => {
+      setSwappingParticipantId(id);
   };
 
   const handleConfirmPanel = () => {
@@ -336,6 +342,7 @@ export default function App() {
       setIsSummarizing(false);
       setUpdatingParticipantId(null);
       stateRef.current.mentionedParticipantId = undefined;
+      setSwappingParticipantId(null);
   };
 
   const handleCancelBackToHome = () => {
@@ -473,7 +480,9 @@ export default function App() {
                         participant={p}
                         onUpdate={handleUpdateParticipantName}
                         onReplace={handleSwapParticipant}
+                        onStartSwap={handleStartSwap}
                         isUpdating={updatingParticipantId === p.id}
+                        isSwapping={swappingParticipantId === p.id}
                     />
                 ))}
             </div>
@@ -490,7 +499,7 @@ export default function App() {
                    {updatingParticipantId ? 'Preparing Guest...' : 'Start Roundtable'}
                 </button>
                 <button
-                    onClick={() => { if (topic.trim() && userContext) { abortControllerRef.current?.abort(); abortControllerRef.current = new AbortController(); setAppState(AppState.GENERATING_PANEL); generatePanel(topic, userContext, abortControllerRef.current.signal).then(panel => { setParticipants(panel); setAppState(AppState.PANEL_REVIEW); }).catch(e => { if (e.name !== 'AbortError') { console.error('Reshuffle failed:', e); setAppState(AppState.LANDING); } }); } }}
+                    onClick={() => { if (topic.trim() && userContext) { setSwappingParticipantId(null); abortControllerRef.current?.abort(); abortControllerRef.current = new AbortController(); setAppState(AppState.GENERATING_PANEL); generatePanel(topic, userContext, abortControllerRef.current.signal).then(panel => { setParticipants(panel); setAppState(AppState.PANEL_REVIEW); }).catch(e => { if (e.name !== 'AbortError') { console.error('Reshuffle failed:', e); setAppState(AppState.LANDING); } }); } }}
                     disabled={!!updatingParticipantId}
                     className="w-full text-md-secondary text-sm font-medium py-3 rounded-full hover:bg-white/5 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
                 >

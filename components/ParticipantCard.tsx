@@ -5,19 +5,22 @@ import { Check, RotateCw, UserRoundPlus, Loader2, X } from 'lucide-react';
 interface ParticipantCardProps {
   participant: Participant;
   isCompact?: boolean;
+  isSwapping?: boolean;
   onUpdate?: (id: string, newName: string) => void;
   onReplace?: (id: string, newName: string) => void;
+  onStartSwap?: (id: string) => void;
   isUpdating?: boolean;
 }
 
 export const ParticipantCard: React.FC<ParticipantCardProps> = ({ 
     participant, 
     isCompact = false, 
+    isSwapping = false,
     onUpdate, 
     onReplace,
+    onStartSwap,
     isUpdating = false 
 }) => {
-  const [isSwapping, setIsSwapping] = useState(false);
   const [swapName, setSwapName] = useState('');
 
   // Generate Initials - guard against empty name
@@ -70,7 +73,7 @@ export const ParticipantCard: React.FC<ParticipantCardProps> = ({
                 autoFocus
               />
               <div className="flex gap-2 mt-1">
-                <button onClick={() => setIsSwapping(false)} className="p-1 text-gray-400 hover:text-white"><X size={16} /></button>
+                <button onClick={() => setSwapName('')} className="p-1 text-gray-400 hover:text-white"><X size={16} /></button>
                 <button onClick={handleSwapSubmit} className="p-1 text-md-accent hover:text-white"><Check size={16} /></button>
               </div>
           </div>
@@ -97,9 +100,9 @@ export const ParticipantCard: React.FC<ParticipantCardProps> = ({
             </div>
 
             {/* Swap Button (Only visible if onReplace provided) */}
-            {onReplace && (
+            {onStartSwap && (
                 <button 
-                    onClick={() => setIsSwapping(true)}
+                    onClick={() => onStartSwap(participant.id)}
                     className="mt-4 flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 hover:bg-md-accent hover:text-black transition-colors text-xs font-medium text-md-secondary group"
                 >
                     <UserRoundPlus size={14} />
