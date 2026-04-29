@@ -2,45 +2,74 @@ import os
 import random
 import re
 import json
+import logging
 import httpx
-from fastapi import FastAPI
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Literal
 from dotenv import load_dotenv
-load_dotenv()
 
-app = FastAPI()
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"), override=True)
 
 class OpeningStatementRejected(Exception):
     """Raised when the AI produces a greeting instead of a substantive opening."""
     pass
 
-# CORS - allow all origins in production (FastAPI Starlette default behavior)
-# Restrict to specific origins if needed via environment variable
+# CORS - use environment variable for allowed origins (comma-separated)
+# Example: ALLOWED_ORIGINS=https://example.com,http://localhost:3000
+_allowed_origins = os.environ.get("ALLOWED_ORIGINS", "").split(",") if os.environ.get("ALLOWED_ORIGINS") else ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://127.0.0.1:3000", "http://127.0.0.1:3001", "http://127.0.0.1:3002", "http://192.168.2.134:3002"]
+
+# Initialize MiniMax API client (Anthropic API compatible)
+api_key = os.environ.get("ANTHROPIC_API_KEY")
+if not api_key:
+    raise ValueError("ANTHROPIC_API_KEY environment variable is required")
+
+base_url = os.environ.get("ANTHROPIC_BASE_URL", "https://api.minimaxi.com/anthropic/v1")
+MODEL = "MiniMax-M2"  # Model name for MiniMax API
+
+# HTTP client managed via lifespan
+_http_client: httpx.AsyncClient | None = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: create HTTP client
+    global _http_client
+    _http_client = httpx.AsyncClient(timeout=120.0)
+    yield
+    # Shutdown: close HTTP client
+    if _http_client:
+        await _http_client.aclose()
+        _http_client = None
+
+app = FastAPI(lifespan=lifespan)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"https?://.*",
-    allow_credentials=True,
+    allow_origins=_allowed_origins,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Initialize MiniMax API client
-api_key = os.environ.get("MINIMAX_API_KEY")
-if not api_key:
-    raise ValueError("MINIMAX_API_KEY environment variable is required")
-
-MODEL = "MiniMax-M2"  # Model name for MiniMax API
-MINIMAX_BASE_URL = "https://api.minimax.com/v1/messages"
-
-# Use async httpx client to avoid blocking FastAPI's async event loop
-_http_client: httpx.AsyncClient | None = None
-
 async def get_http_client() -> httpx.AsyncClient:
     global _http_client
     if _http_client is None:
-        _http_client = httpx.AsyncClient(timeout=120.0)
+        # Configure retry strategy for robustness
+        retry_config = httpx.Retry(
+            total=3,
+            backoff_factor=0.5,
+            status_forcelist=[500, 502, 503, 504],
+        )
+        _http_client = httpx.AsyncClient(
+            timeout=120.0,
+            retry=retry_config
+        )
     return _http_client
 
 AVATAR_COLORS = [
@@ -69,7 +98,7 @@ class Participant(BaseModel):
     name: str = Field(min_length=1)
     title: str = Field(min_length=1)
     stance: str = Field(min_length=1)
-    roleType: str
+    roleType: Literal['expert', 'host', 'user']
     color: str
 
 
@@ -120,7 +149,7 @@ async def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int 
     client = await get_http_client()
 
     headers = {
-        "Authorization": f"Bearer {api_key}",
+        "Authorization": "Bearer ***",  # Mask API key in logs
         "Content-Type": "application/json",
         "anthropic-version": "2023-06-01"
     }
@@ -138,24 +167,46 @@ async def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int 
         # For JSON mode, use a generous token limit to avoid API issues
         data["max_tokens"] = max(4096, max_tokens)
 
-    response = await client.post(MINIMAX_BASE_URL, json=data, headers=headers)
+    logger.debug(f"Calling AI API with prompt length: {len(prompt)}")
+    # Actual headers with API key (not logged)
+    request_headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "anthropic-version": "2023-06-01"
+    }
+    response = await client.post(f"{base_url}/messages", json=data, headers=request_headers)
     response.raise_for_status()
     result = response.json()
 
     # Extract text from response
+    # MiniMax reasoning models return both thinking and text blocks.
+    # Always prefer text blocks over thinking blocks.
     content = result.get("content", [])
+    logger.info(f"AI response content types: {[b.get('type') for b in content]}")
+
+    # Pass 1: prefer text blocks (the actual response)
     for block in content:
         if block.get("type") == "text":
             text_result = block.get("text", "").strip()
-            # Remove markdown code fences if present
-            if text_result.startswith("```"):
-                lines = text_result.split("\n")
-                text_result = "\n".join(lines[1:])
-                if text_result.endswith("```"):
-                    text_result = text_result[:-3]
-                text_result = text_result.strip()
-            return text_result
+            if text_result:
+                if text_result.startswith("```"):
+                    code_fence_match = re.search(r'```(?:json)?\s*([\s\S]*?)```', text_result)
+                    if code_fence_match:
+                        text_result = code_fence_match.group(1).strip()
+                    else:
+                        lines = text_result.split("\n")
+                        text_result = "\n".join(lines[1:]).strip()
+                return text_result
 
+    # Pass 2: fallback to thinking blocks
+    for block in content:
+        if block.get("type") in ("thinking", "redacted_thinking"):
+            thinking_text = block.get("thinking", "") or block.get("text", "") or ""
+            if thinking_text.strip():
+                logger.info(f"Falling back to {block.get('type')} block")
+                return thinking_text.strip()
+
+    logger.error(f"Raw AI response: {json.dumps(result, indent=2)[:2000]}")
     raise ValueError("AI response contained no text block and no parseable JSON in thinking")
 
 
@@ -169,26 +220,46 @@ async def generate_random_topic(req: GenerateRandomTopicRequest):
         if not text or len(text.strip()) < 5:
             raise ValueError("Empty or too short response from AI")
         return {"topic": text.strip()}
+    except httpx.HTTPStatusError as e:
+        logger.error(f"HTTP error generating random topic: {e.response.status_code}")
+        raise ValueError(f"AI service unavailable (HTTP {e.response.status_code})")
+    except (ValueError, json.JSONDecodeError) as e:
+        # Non-recoverable: bad response format
+        logger.error(f"Invalid response format generating random topic: {e}")
+        raise ValueError(f"Invalid AI response format")
     except Exception as e:
-        print(f"Error generating random topic: {e}")
-        return {"topic": "Do we live in a simulation?"}
+        logger.error(f"Unexpected error generating random topic: {e}")
+        raise ValueError(f"Topic generation failed: {str(e)}")
 
 
 @app.post("/api/generate_panel")
 async def generate_panel(req: GeneratePanelRequest):
+    lang_name = "Chinese" if req.userContext.language.lower() == "chinese" else req.userContext.language
     prompt = f"""Topic: {req.topic}
-Language: {req.userContext.language}
-Select 3 diverse ALIVE experts for this debate. Return JSON:
+Language: {lang_name}
+
+Select 3 diverse, ALIVE, REAL experts who are DIRECTLY relevant to this specific topic. Each expert must have genuine expertise related to the debate topic.
+
+CRITICAL REQUIREMENTS:
+- Expert names, titles, and stances MUST be in {lang_name}.
+- Each expert's stance must be specifically about "{req.topic}".
+- Experts must be real, well-known people whose work relates to this topic.
+
+Return JSON:
 {{"participants": [{{"name": "?", "title": "?", "stance": "?"}}]}}"""
     try:
         text = await get_ai_response(prompt, json_mode=True, max_tokens=768)
         data = json.loads(text)
         participants = data.get("participants", [])
+    except httpx.HTTPStatusError as e:
+        logger.error(f"HTTP error generating panel: {e.response.status_code}")
+        raise ValueError(f"AI service unavailable (HTTP {e.response.status_code})")
+    except (ValueError, json.JSONDecodeError) as e:
+        logger.error(f"Invalid response format generating panel: {e}", exc_info=True)
+        raise ValueError(f"Invalid AI response format")
     except Exception as e:
-        import traceback
-        print(f"Error generating panel: {e}")
-        traceback.print_exc()
-        raise ValueError(f"Panel generation failed: {e}")
+        logger.error(f"Error generating panel: {e}", exc_info=True)
+        raise ValueError(f"Panel generation failed: {str(e)}")
 
     # Validate: must have exactly 3 participants with required fields
     if not isinstance(participants, list) or not participants:
@@ -196,11 +267,16 @@ Select 3 diverse ALIVE experts for this debate. Return JSON:
 
     # Graceful degradation: if fewer than 3, generate placeholders
     if len(participants) < 3:
-        print(f"Warning: Panel API returned only {len(participants)} participant(s), padding to 3")
-        default_participants = [
+        logger.warning(f"Panel API returned only {len(participants)} participant(s), padding to 3")
+        default_english = [
             {"name": "Dr. Wei Chen", "title": "AI Ethics Researcher", "stance": "Concerned about AI alignment and safety."},
             {"name": "Prof. Marcus Lee", "title": "Technology Philosopher", "stance": "Optimistic about human-AI collaboration."},
         ]
+        default_chinese = [
+            {"name": "陈伟博士", "title": "人工智能伦理研究员", "stance": "关注人工智能对齐与安全问题。"},
+            {"name": "马库斯·李教授", "title": "技术哲学家", "stance": "对人类与人工智能协作持乐观态度。"},
+        ]
+        default_participants = default_chinese if req.userContext.language.lower() == "chinese" else default_english
         while len(participants) < 3:
             participants.append(default_participants[len(participants) % len(default_participants)])
 
@@ -228,16 +304,32 @@ Select 3 diverse ALIVE experts for this debate. Return JSON:
 
 @app.post("/api/generate_single_participant")
 async def generate_single_participant(req: GenerateSingleParticipantRequest):
+    lang_name = "Chinese" if req.userContext.language.lower() == "chinese" else req.userContext.language
     prompt = f"""User: {req.inputQuery}
 Topic: {req.topic}
-Language: {req.userContext.language}
-Identify this person. Return JSON: {{"name":"?","title":"?","stance":"?"}}"""
+Language: {lang_name}
+
+Identify this person. Return a real, living person most relevant to the topic.
+CRITICAL: Name, title, and stance MUST be in {lang_name}.
+Return JSON: {{"name":"?","title":"?","stance":"?"}}"""
     try:
         text = await get_ai_response(prompt, json_mode=True, max_tokens=384)
         data = json.loads(text)
+        if not isinstance(data, dict):
+            raise ValueError(f"Invalid response type: expected dict, got {type(data).__name__}")
+        for key in ("name", "title", "stance"):
+            if not data.get(key):
+                raise ValueError(f"Missing required field '{key}' in single participant response: {data}")
         return data
+    except httpx.HTTPStatusError as e:
+        logger.error(f"HTTP error generating single participant: {e.response.status_code}")
+        raise ValueError(f"AI service unavailable (HTTP {e.response.status_code})")
+    except (ValueError, json.JSONDecodeError) as e:
+        logger.error(f"Invalid response format generating single participant: {e}")
+        raise ValueError(f"Invalid AI response format")
     except Exception as e:
-        return {"name": req.inputQuery, "title": "Special Guest", "stance": "I have a unique perspective."}
+        logger.error(f"Unexpected error generating single participant: {e}")
+        raise ValueError(f"Participant generation failed: {str(e)}")
 
 
 @app.post("/api/predict_next_speaker")
@@ -309,6 +401,7 @@ Return ONLY the ID (e.g., expert_1).
         # Fallback: return any participant if other_speakers is empty
         return {"speakerId": req.participants[0].id}
     except Exception as e:
+        logger.error(f"Error predicting next speaker: {e}")
         return {"speakerId": req.participants[0].id}
 
 
@@ -322,38 +415,39 @@ async def generate_turn(req: GenerateTurnRequest):
     valid_names_list = ", ".join([p.name for p in req.participants])
 
     if req.isOpeningStatement:
+        lang = req.userContext.language
         prompt = f"""
 Role: You are {speaker_name}, {speaker.title}.
 Core Stance: {speaker.stance}.
 Topic: "{req.topic}"
-Language: {req.userContext.language}
 
 Task: State your core argument clearly and naturally.
+- You MUST speak in {lang}. All output text must be in {lang}.
 - Speak like a real person in a podcast/salon, not a textbook.
 - Be direct but polite.
 - Do not address other guests yet.
 - Keep it under 50 words.
 - ABSOLUTE PROHIBITION: Do NOT start with greetings like "Hello", "Hi everyone", "Good morning", "很高兴", "大家好", etc. Start directly with your substantive argument.
 
-Output: Just the spoken text. No labels, no greetings.
+Output: Just the spoken text in {lang}. No labels, no greetings.
 """
         try:
             text = await get_ai_response(prompt)
             if not text or len(text.strip()) < 3:
                 raise ValueError("Opening statement too short or empty")
             # Reject greeting-only responses
-            greeting_patterns = ["hello", "hi ", "good morning", "good afternoon", "good evening", "很高兴", "大家好", "各位好", "很高兴认识"]
+            greeting_patterns = ["hello", "hi", "good morning", "good afternoon", "good evening", "很高兴", "大家好", "各位好", "很高兴认识", "您好", "你好", "嗨", "greetings", "hey", "welcome", "dear", "亲爱的", "早", "晚上好", "下午好"]
             text_lower = text.strip().lower()
             if any(text_lower.startswith(g) for g in greeting_patterns):
                 raise OpeningStatementRejected(f"Opening statement starts with greeting: {text[:50]}")
-            return {"text": text.strip(), "stance": "NEUTRAL", "stanceIntensity": 3, "shouldWaitForUser": False}
+            return {"text": text.strip(), "stance": speaker.stance, "stanceIntensity": 3, "shouldWaitForUser": False}
         except OpeningStatementRejected:
             raise  # Re-raise with original message for retry
         except ValueError:
             raise  # Re-raise ValueError as-is for intentional rejections
         except Exception as e:
-            print(f"Opening statement error: {e}")
-            raise OpeningStatementRejected(f"Opening statement generation failed: {e}")
+            logger.error(f"Opening statement error: {e}")
+            raise ValueError(f"Opening statement generation failed: {str(e)}")
 
     # Discussion turn
     recent_history = "\n\n".join([
@@ -366,16 +460,22 @@ Output: Just the spoken text. No labels, no greetings.
     last_message = req.messageHistory[-1] if req.messageHistory else None
     host_just_spoke = last_message.senderId == "user" if last_message else False
     last_was_pivot = last_message.stance == "PIVOT" if last_message and last_message.stance else False
-    is_breadth_turn = not last_was_pivot and random.random() < 0.25
+    is_breadth_turn = not last_was_pivot and random.random() < 0.25 and not host_just_spoke
 
     strategy = "**STRATEGY: DIVERGE (Breadth)**. STOP dwelling on the current specific point. Abruptly SHIFT the lens to a NEW dimension. **MANDATORY**: Use stance 'PIVOT'." if is_breadth_turn else "**STRATEGY: CONVERGE (Depth)**. Drill deeper into the specific logic of the previous speaker."
 
     mentioned_in_last_host_msg = None
     if last_message and last_message.senderId == "user":
-        for p in req.participants:
-            if f"@{p.name.lower()}" in last_message.text.lower():
-                mentioned_in_last_host_msg = p
-                break
+        # If the client explicitly provided a mentionedParticipantId, use it directly
+        if req.mentionedParticipantId:
+            mentioned_in_last_host_msg = next((p for p in req.participants if p.id == req.mentionedParticipantId), None)
+        if not mentioned_in_last_host_msg:
+            # Sort by name length descending to avoid substring mismatches (e.g. "Lee" matching before "Lee Chen")
+            sorted_participants = sorted(req.participants, key=lambda p: len(p.name), reverse=True)
+            for p in sorted_participants:
+                if f"@{p.name.lower()}" in last_message.text.lower():
+                    mentioned_in_last_host_msg = p
+                    break
 
     # Override speaker selection if this speaker was @mentioned by host
     if mentioned_in_last_host_msg and req.speakerId == mentioned_in_last_host_msg.id:
@@ -390,7 +490,6 @@ Output: Just the spoken text. No labels, no greetings.
     prompt = f"""
 Context: A high-quality, intellectual roundtable discussion (Salon).
 Topic: "{req.topic}"
-Language: {req.userContext.language}
 Host: {req.userContext.nickname}
 Valid Participants: {valid_names_list}
 
@@ -403,10 +502,11 @@ Transcript (Recent Context):
 {directives}
 
 ADDITIONAL RULES:
-1. **INTELLECTUAL FLEXIBILITY**: Do NOT be stubbornly dogmatic. If a previous speaker makes a strong point that contradicts your view, you should ACKNOWLEDGE it.
-2. **STANCE & INTENSITY**: Decide your attitude: [AGREE, DISAGREE, PARTIAL, PIVOT, NEUTRAL]. Intensity (1-5): 1=Mild, 5=Strong.
-3. {strategy}
-4. **STYLE**: SINGLE FOCUS, EXTREME BREVITY (under 60 words), PLAIN LANGUAGE, DIRECTNESS.
+1. **LANGUAGE**: You MUST speak in {req.userContext.language}. All output must be in {req.userContext.language}.
+2. **INTELLECTUAL FLEXIBILITY**: Do NOT be stubbornly dogmatic. If a previous speaker makes a strong point that contradicts your view, you should ACKNOWLEDGE it.
+3. **STANCE & INTENSITY**: Decide your attitude: [AGREE, DISAGREE, PARTIAL, PIVOT, NEUTRAL]. Intensity (1-5): 1=Mild, 5=Strong.
+4. {strategy}
+5. **STYLE**: SINGLE FOCUS, EXTREME BREVITY (under 60 words), PLAIN LANGUAGE, DIRECTNESS.
 
 Status:
 - Current Turn: {req.turnCount}/{req.maxTurns}.
@@ -459,7 +559,14 @@ Action is "WAIT" if force yielding, otherwise "CONTINUE".
             intensity = 3
             action = ""
 
-        should_wait = "WAIT" in action or force_return_to_host or (f"@{req.userContext.nickname}" in message and "?" in message and req.turnCount > 0)
+        # Validate and sanitize stance and intensity
+        valid_stances = {"AGREE", "DISAGREE", "PARTIAL", "PIVOT", "NEUTRAL"}
+        if stance not in valid_stances:
+            logger.warning(f"Invalid stance '{stance}', defaulting to NEUTRAL")
+            stance = "NEUTRAL"
+        intensity = max(1, min(5, intensity))
+
+        should_wait = "WAIT" in action.upper() or force_return_to_host or (re.search(r'\B@' + re.escape(req.userContext.nickname) + r'(?:\s|$|[^a-zA-Z0-9])', message, re.IGNORECASE) and "?" in message and req.turnCount > 0)
 
         return {
             "text": message,
@@ -468,8 +575,8 @@ Action is "WAIT" if force yielding, otherwise "CONTINUE".
             "shouldWaitForUser": should_wait
         }
     except Exception as e:
-        print(f"Error generating turn: {e}")
-        raise ValueError(f"Discussion turn generation failed: {e}")
+        logger.error(f"Error generating turn: {e}")
+        raise ValueError(f"Discussion turn generation failed: {str(e)}")
 
 
 @app.post("/api/generate_summary")
@@ -533,7 +640,30 @@ CRITICAL REQUIREMENTS:
 """
     try:
         text = await get_ai_response(prompt, json_mode=True, max_tokens=1024)
-        data = json.loads(text)
+
+        # Try to extract JSON from markdown code blocks if present
+        json_text = text
+        if text.startswith("```"):
+            json_match = re.search(r'```(?:json)?\s*([\s\S]*?)```', text)
+            if json_match:
+                json_text = json_match.group(1)
+
+        # Try to parse JSON, with fallback to repair common issues
+        try:
+            data = json.loads(json_text)
+        except json.JSONDecodeError:
+            # Attempt to fix common JSON issues (trailing commas, single quotes)
+            cleaned = json_text.replace(',}', '}').replace(',]', ']').replace("'", '"')
+            try:
+                data = json.loads(cleaned)
+            except json.JSONDecodeError:
+                logger.error(f"Failed to parse JSON from AI response: {json_text[:200]}")
+                raise ValueError("Invalid JSON in AI response")
+
+        # Initialize core_viewpoints before padding logic
+        if not data.get("core_viewpoints"):
+            data["core_viewpoints"] = []
+
         # Validate required fields
         if not data.get("topic"):
             data["topic"] = req.topic
@@ -578,8 +708,8 @@ CRITICAL REQUIREMENTS:
                 data["core_viewpoints"] = data["core_viewpoints"][:len(req.participants)]
         return data
     except Exception as e:
-        print(f"Error generating summary: {e}")
-        raise ValueError(f"Summary generation failed: {e}")
+        logger.error(f"Error generating summary: {e}")
+        raise ValueError(f"Summary generation failed: {str(e)}")
 
 
 if __name__ == "__main__":

@@ -26,6 +26,9 @@ export default function App() {
   const [isWaitingForUser, setIsWaitingForUser] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [swappingParticipantId, setSwappingParticipantId] = useState<string | null>(null);
+  const [mentionedParticipantIdVersion, setMentionedParticipantIdVersion] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const consecutiveFallbackRef = useRef(0);
 
   // Logic Control
   const [autoDebateCount, setAutoDebateCount] = useState(0);
@@ -48,27 +51,29 @@ export default function App() {
   }, [messages, thinkingSpeakerId, isTyping, isWaitingForUser, scrollToBottom]);
 
   // --- DISCUSSION LOOP ---
-  // Single effect that handles all discussion state machine transitions
-  // IMPORTANT: This effect ONLY sets up the abort controller and synchronizes stateRef.
-  // It does NOT set turnInProgressRef (that's done by the inner effects).
-  // It does NOT abort in-flight requests (that would race with inner effect async work).
+  // Sync stateRef on every render so async callbacks always read fresh state.
+  // This MUST run before any other effect that reads stateRef.
   useEffect(() => {
-    // Guards - must be outside state capture
-    if (stateRef.current.isWaitingForUser || stateRef.current.isSummarizing) return;
-    if (isTyping || thinkingSpeakerId) return;
-
-    // Keep stateRef in sync with latest state (includes mentionedParticipantId)
     stateRef.current = { appState, topic, participants, messages, userContext, autoDebateCount, currentRoundLimit, openingSpeakerIndex, isWaitingForUser, isSummarizing, mentionedParticipantId: stateRef.current.mentionedParticipantId };
+  });
 
-    // Create a new AbortController for this discussion cycle
-    abortControllerRef.current?.abort();
-    abortControllerRef.current = new AbortController();
+  // Create AbortController on entry to discussion phases.
+  // No cleanup on dependency change — handlers manage their own abort logic.
+  useEffect(() => {
+    if (appState === AppState.OPENING_STATEMENTS || appState === AppState.DISCUSSION) {
+      if (!abortControllerRef.current) {
+        abortControllerRef.current = new AbortController();
+      }
+    }
+  }, [appState]);
 
-    // Cleanup: abort request on re-run or unmount
+  // Abort on unmount only (final cleanup).
+  useEffect(() => {
     return () => {
       abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
     };
-  }, [isTyping, thinkingSpeakerId, appState, isWaitingForUser, isSummarizing, openingSpeakerIndex, autoDebateCount, participants, topic, userContext, currentRoundLimit]);
+  }, []);
 
   // Effect for opening statements phase
   useEffect(() => {
@@ -120,14 +125,14 @@ export default function App() {
       console.error('Opening statement error:', e);
       setIsTyping(false);
       setThinkingSpeakerId(null);
-      setAppState(AppState.LANDING);
+      setIsWaitingForUser(true);
       turnInProgressRef.current = false;
     }).finally(() => {
       setThinkingSpeakerId(null);
       setIsTyping(false);
       turnInProgressRef.current = false;
     });
-  }, [isTyping, thinkingSpeakerId, openingSpeakerIndex, appState]);
+  }, [isTyping, thinkingSpeakerId, openingSpeakerIndex, appState, participants, userContext]);
 
   // Effect for discussion phase
   useEffect(() => {
@@ -135,10 +140,11 @@ export default function App() {
     // But once all opening statements are done, the first DISCUSSION turn should run even when
     // isWaitingForUser=true, because no AI turn has happened yet in DISCUSSION state.
     const hasMessagesInDiscussion = stateRef.current.messages.some(m => m.senderId !== 'user');
-    if (stateRef.current.appState !== AppState.DISCUSSION) return;
-    if (stateRef.current.isSummarizing) return;
-    if (stateRef.current.isWaitingForUser && hasMessagesInDiscussion) return;
-    if (isTyping || thinkingSpeakerId) return;
+    if (stateRef.current.appState !== AppState.DISCUSSION) { turnInProgressRef.current = false; return; }
+    if (stateRef.current.isSummarizing) { turnInProgressRef.current = false; return; }
+    if (stateRef.current.isWaitingForUser && hasMessagesInDiscussion) { turnInProgressRef.current = false; return; }
+    if (isTyping || thinkingSpeakerId) { turnInProgressRef.current = false; return; }
+    if (turnInProgressRef.current) return; // Safety: prevent concurrent turns
 
     const { topic: currentTopic, participants: currentParticipants, messages: currentMessages, userContext: currentUserContext, autoDebateCount: currentAutoDebateCount, currentRoundLimit: currentRoundLimitVal, mentionedParticipantId } = stateRef.current;
 
@@ -156,7 +162,7 @@ export default function App() {
     setIsTyping(true);
     turnInProgressRef.current = true;
 
-    predictNextSpeaker(currentTopic, currentParticipants, currentMessages, currentUserContext, currentAutoDebateCount)
+    predictNextSpeaker(currentTopic, currentParticipants, currentMessages, currentUserContext, currentAutoDebateCount, abortControllerRef.current!.signal)
       .then(async nextSpeakerId => {
         setThinkingSpeakerId(nextSpeakerId);
         const result = await generateTurnForSpeaker(
@@ -204,7 +210,7 @@ export default function App() {
         setIsTyping(false);
         turnInProgressRef.current = false;
       });
-  }, [isTyping, thinkingSpeakerId, autoDebateCount, isWaitingForUser, isSummarizing, appState, participants, topic, userContext, messages, currentRoundLimit]);
+  }, [isTyping, thinkingSpeakerId, autoDebateCount, isWaitingForUser, isSummarizing, appState, participants, topic, userContext, messages, currentRoundLimit, mentionedParticipantIdVersion]);
 
 
   // --- HANDLERS ---
@@ -292,28 +298,27 @@ export default function App() {
       }
     }
     stateRef.current.mentionedParticipantId = mentionedId;
-
-    // Abort any in-flight request before starting new turn
-    abortControllerRef.current?.abort();
-    abortControllerRef.current = new AbortController();
+    setMentionedParticipantIdVersion(prev => prev + 1);
 
     setMessages(prev => [...prev, userMsg]);
     setIsWaitingForUser(false);
     setAutoDebateCount(0);
     // Randomly assign 1-3 turns before returning to host
     setCurrentRoundLimit(Math.floor(Math.random() * 3) + 1);
-    // Kick off the next discussion turn
-    turnInProgressRef.current = true;
   };
 
   const handleSummarize = async () => {
       if (!userContext) return;
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = new AbortController();
       setIsSummarizing(true);
       try {
-        const s = await generateSummary(topic, messages, participants, userContext);
+        const s = await generateSummary(topic, messages, participants, userContext, abortControllerRef.current.signal);
         setSummary(s);
-      } catch (e) {
-        console.error("Failed to generate summary:", e);
+      } catch (e: any) {
+        if (e.name !== 'AbortError') {
+          console.error("Failed to generate summary:", e);
+        }
       } finally {
         setIsSummarizing(false);
       }
@@ -499,12 +504,13 @@ export default function App() {
                    {updatingParticipantId ? 'Preparing Guest...' : 'Start Roundtable'}
                 </button>
                 <button
-                    onClick={() => { if (topic.trim() && userContext) { setSwappingParticipantId(null); abortControllerRef.current?.abort(); abortControllerRef.current = new AbortController(); setAppState(AppState.GENERATING_PANEL); generatePanel(topic, userContext, abortControllerRef.current.signal).then(panel => { setParticipants(panel); setAppState(AppState.PANEL_REVIEW); }).catch(e => { if (e.name !== 'AbortError') { console.error('Reshuffle failed:', e); setAppState(AppState.LANDING); } }); } }}
+                    onClick={() => { if (topic.trim() && userContext) { setSwappingParticipantId(null); abortControllerRef.current?.abort(); abortControllerRef.current = new AbortController(); setAppState(AppState.GENERATING_PANEL); setError(null); generatePanel(topic, userContext, abortControllerRef.current.signal).then(panel => { setParticipants(panel); setAppState(AppState.PANEL_REVIEW); }).catch(e => { if (e.name !== 'AbortError') { console.error('Reshuffle failed:', e); setError('Failed to reshuffle panel. Please try again.'); setAppState(AppState.PANEL_REVIEW); } }); } }}
                     disabled={!!updatingParticipantId}
                     className="w-full text-md-secondary text-sm font-medium py-3 rounded-full hover:bg-white/5 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                     <RotateCcw size={16} /> Reshuffle All
                 </button>
+                {error && <p className="text-red-400 text-sm text-center mt-2">{error}</p>}
             </div>
         </div>
       </div>

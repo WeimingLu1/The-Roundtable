@@ -41,22 +41,31 @@ export const InputArea: React.FC<InputAreaProps> = ({
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const val = e.target.value;
       setText(val);
-      // Show popup when user has typed @ followed by non-space characters (partial mention)
-      // Hide only when there's a space after the last @
-      const lastAtIndex = val.lastIndexOf('@');
+      // Show popup when cursor is after @ followed by non-space characters
+      const cursorPos = e.target.selectionStart ?? val.length;
+
+      // Find the @ symbol before cursor that starts a mention
+      const textBeforeCursor = val.slice(0, cursorPos);
+      const lastAtIndex = textBeforeCursor.lastIndexOf('@');
+
       if (lastAtIndex === -1) {
           setShowMentionPopup(false);
       } else {
-          const textAfterAt = val.slice(lastAtIndex);
+          const textAfterAt = textBeforeCursor.slice(lastAtIndex);
+          // Show popup if there's no space after the @
           setShowMentionPopup(!textAfterAt.includes(' '));
       }
   };
 
   const insertMention = (name: string) => {
-      setText(prev => prev + name + ' ');
+      setText(prev => {
+        const lastAtIndex = prev.lastIndexOf('@');
+        if (lastAtIndex === -1) return prev + name + ' ';
+        return prev.slice(0, lastAtIndex) + '@' + name + ' ';
+      });
       setShowMentionPopup(false);
-      // Defer focus to ensure it runs after state update completes
-      setTimeout(() => textareaRef.current?.focus(), 0);
+      // Defer focus using requestAnimationFrame for reliable timing in React concurrent mode
+      requestAnimationFrame(() => textareaRef.current?.focus());
   };
 
   useEffect(() => {

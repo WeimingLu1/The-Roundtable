@@ -20,7 +20,7 @@ Summary:
 ${summary.summary || ''}
 
 Core Viewpoints:
-${summary.core_viewpoints.map(vp => `
+${(summary.core_viewpoints || []).map(vp => `
 【${vp.speaker}】${vp.title}
 立场: ${vp.stance}
 关键观点:
@@ -50,7 +50,7 @@ ${summary.conclusion || ''}
 
 概述: ${summary.summary || ''}
 
-${summary.core_viewpoints.map(vp => `
+${(summary.core_viewpoints || []).map(vp => `
 • ${vp.speaker} (${vp.title}): ${vp.stance}
 `).join('')}
 

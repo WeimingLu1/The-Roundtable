@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Participant } from '../types';
 import { Check, RotateCw, UserRoundPlus, Loader2, X } from 'lucide-react';
 
@@ -9,19 +9,23 @@ interface ParticipantCardProps {
   onUpdate?: (id: string, newName: string) => void;
   onReplace?: (id: string, newName: string) => void;
   onStartSwap?: (id: string) => void;
+  onEndSwap?: (id: string) => void;
   isUpdating?: boolean;
 }
 
-export const ParticipantCard: React.FC<ParticipantCardProps> = ({ 
-    participant, 
-    isCompact = false, 
+export const ParticipantCard: React.FC<ParticipantCardProps> = ({
+    participant,
+    isCompact = false,
     isSwapping = false,
-    onUpdate, 
+    onUpdate,
     onReplace,
     onStartSwap,
-    isUpdating = false 
+    onEndSwap,
+    isUpdating = false
 }) => {
   const [swapName, setSwapName] = useState('');
+
+  useEffect(() => { if (isSwapping) setSwapName(''); }, [isSwapping]);
 
   // Generate Initials - guard against empty name
   const initials = (participant.name || '??')
@@ -35,7 +39,7 @@ export const ParticipantCard: React.FC<ParticipantCardProps> = ({
       if (swapName.trim() && onReplace) {
           onReplace(participant.id, swapName.trim());
           setSwapName('');
-          setIsSwapping(false);
+          onEndSwap?.(participant.id);
       }
   }
 

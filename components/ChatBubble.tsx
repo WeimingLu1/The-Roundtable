@@ -1,6 +1,11 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { Message, Participant } from '../types';
 import { ThumbsUp, ThumbsDown, GitBranch, Minus, Hand } from 'lucide-react';
+
+// Helper to escape characters for Regex - moved outside component
+const escapeRegExp = (string: string) => {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+};
 
 interface ChatBubbleProps {
   message: Message;
@@ -20,13 +25,8 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, sender, partici
     [participants]
   );
 
-  // Helper to escape characters for Regex
-  const escapeRegExp = (string: string) => {
-    return string.replace(/[.*+?^${}()|[\]\\]/g, '$$&');
-  };
-
   // 1. First Pass: Handle @Mentions
-  const parseMentions = (text: string): React.ReactNode[] => {
+  const parseMentions = useCallback((text: string): React.ReactNode[] => {
       const hostAliases = ['Host', 'User'];
       if (hostName) hostAliases.push(hostName);
       hostAliases.sort((a, b) => b.length - a.length);
@@ -95,10 +95,10 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, sender, partici
       }
 
       return result;
-  };
+  }, [sortedNames, participants, hostName, isUser]);
 
   // 2. Second Pass: Handle **Bold** Markdown (Applied recursively on text parts)
-  const renderRichText = (text: string) => {
+  const renderRichText = useCallback((text: string) => {
       const parts = text.split(/(\*\*.*?\*\*)/g); // Split by **bold** text
       
       return parts.map((part, index) => {
@@ -115,7 +115,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, sender, partici
               return <React.Fragment key={index}>{parseMentions(part)}</React.Fragment>;
           }
       });
-  };
+  }, [parseMentions, isUser]);
 
   const renderStanceBadge = () => {
     if (!message.stance || message.stance === 'NEUTRAL') return null;
@@ -123,7 +123,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, sender, partici
     let colorClass = 'bg-gray-500/20 text-gray-300 border-gray-500/30';
     let icon = <Minus size={10} />;
     let text = message.stance;
-    const intensity = message.stanceIntensity || 3;
+    const intensity = message.stanceIntensity ?? 3;
 
     // Helper for intensity adjectives
     const getAdjective = (val: number) => {
@@ -153,6 +153,8 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, sender, partici
             icon = <GitBranch size={10} />;
             text = 'Shifting Topic';
             break;
+        default:
+            return null;
     }
 
     return (

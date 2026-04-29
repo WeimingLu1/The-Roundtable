@@ -58,10 +58,11 @@
 ## 📖 使用方法 (How to Use)
 
 ### 1. 环境准备
-确保你拥有 MiniMax API Key。在 `.env` 文件中配置：
+在 `backend/.env` 中配置 MiniMax API（兼容 Anthropic Messages API）：
 
 ```
-MINIMAX_API_KEY=***
+ANTHROPIC_API_KEY=sk-cp-***
+ANTHROPIC_BASE_URL=https://api.minimaxi.com/anthropic/v1
 ```
 
 ### 2. 交互指南
@@ -74,7 +75,10 @@ MINIMAX_API_KEY=***
 # 安装依赖
 npm install
 
-# 启动开发环境
+# 启动后端 (port 3001)
+cd backend && python main.py
+
+# 启动前端 (port 3000)
 npm run dev
 
 # 生产环境构建
@@ -85,18 +89,17 @@ npm run build
 
 ## 📂 目录结构说明
 
-*   `/services/`: AI 服务层
-    *   `geminiService.ts`: AI 交互逻辑（前端调用后端）
-    *   `backend/main.py`: MiniMax M2 API 后端服务（FastAPI）
-*   `/App.tsx`: 顶层状态机，控制讨论的阶段切换。
-*   `/components/`: 纯 UI 组件，负责气泡渲染、卡片展示等。
-*   `/types.ts`: 定义了整个系统的核心数据模型。
+*   `App.tsx`: 顶层状态机，控制讨论的阶段切换（ONBOARDING → LANDING → GENERATING_PANEL → PANEL_REVIEW → OPENING_STATEMENTS → DISCUSSION）。
+*   `/services/geminiService.ts`: 前端 AI 服务层，封装所有 API 调用（含重试、超时、fallback）。
+*   `/backend/main.py`: FastAPI 后端，代理 MiniMax M2 Anthropic-compatible API，处理所有 AI 生成逻辑。
+*   `/components/`: 纯 UI 组件（ChatBubble, InputArea, ParticipantCard, SummaryModal, OnboardingForm）。
+*   `/types.ts`: 核心数据模型（Participant, Message, AppState, Summary, UserContext）。
 
 ### 后端启动
 
 ```bash
 cd backend
-python -m uvicorn main:app --host 0.0.0.0 --port 3001
+python main.py
 ```
 
 ---
