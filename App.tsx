@@ -32,15 +32,16 @@ export default function App() {
 
   // Logic Control
   const [autoDebateCount, setAutoDebateCount] = useState(0);
-  const [currentRoundLimit, setCurrentRoundLimit] = useState(3);
+  const [currentRoundLimit, setCurrentRoundLimit] = useState(5);
   const [openingSpeakerIndex, setOpeningSpeakerIndex] = useState(0);
+  const [openingSpeakerOrder, setOpeningSpeakerOrder] = useState<string[]>([]);
 
   // Refs for async operations
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const turnInProgressRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   // Keep latest state snapshot for async callbacks to avoid stale closures
-  const stateRef = useRef({ appState, topic, participants, messages, userContext, autoDebateCount, currentRoundLimit, openingSpeakerIndex, isWaitingForUser, isSummarizing, mentionedParticipantId: undefined as string | undefined });
+  const stateRef = useRef({ appState, topic, participants, messages, userContext, autoDebateCount, currentRoundLimit, openingSpeakerIndex, openingSpeakerOrder: [] as string[], isWaitingForUser, isSummarizing, mentionedParticipantId: undefined as string | undefined });
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -54,7 +55,7 @@ export default function App() {
   // Sync stateRef on every render so async callbacks always read fresh state.
   // This MUST run before any other effect that reads stateRef.
   useEffect(() => {
-    stateRef.current = { appState, topic, participants, messages, userContext, autoDebateCount, currentRoundLimit, openingSpeakerIndex, isWaitingForUser, isSummarizing, mentionedParticipantId: stateRef.current.mentionedParticipantId };
+    stateRef.current = { appState, topic, participants, messages, userContext, autoDebateCount, currentRoundLimit, openingSpeakerIndex, openingSpeakerOrder, isWaitingForUser, isSummarizing, mentionedParticipantId: stateRef.current.mentionedParticipantId };
   });
 
   // Create AbortController on entry to discussion phases.
@@ -84,14 +85,24 @@ export default function App() {
     const { participants: currentParticipants, topic: currentTopic, messages: currentMessages, userContext: currentUserContext } = stateRef.current;
     const currentOpeningSpeakerIndex = stateRef.current.openingSpeakerIndex;
 
-    if (!currentParticipants || currentParticipants.length === 0 || currentOpeningSpeakerIndex >= currentParticipants.length) {
+    const order = stateRef.current.openingSpeakerOrder;
+    const maxIndex = (order && order.length > 0) ? order.length : (currentParticipants?.length || 0);
+    if (!currentParticipants || currentParticipants.length === 0 || currentOpeningSpeakerIndex >= maxIndex) {
       setAppState(AppState.DISCUSSION);
       setIsWaitingForUser(true);
       turnInProgressRef.current = false;
       return;
     }
 
-    const speaker = currentParticipants[currentOpeningSpeakerIndex];
+    // Use randomized order if available, fall back to sequential
+    const targetId = (order && order.length > 0)
+      ? order[currentOpeningSpeakerIndex]
+      : currentParticipants[currentOpeningSpeakerIndex]?.id;
+    const speaker = currentParticipants.find(p => p.id === targetId);
+    if (!speaker) {
+      turnInProgressRef.current = false;
+      return;
+    }
     if (!currentUserContext) {
       turnInProgressRef.current = false;
       return;
@@ -275,6 +286,9 @@ export default function App() {
     setAppState(AppState.OPENING_STATEMENTS);
     setOpeningSpeakerIndex(0);
     setMessages([]);
+    // Shuffle opening speaker order for variety
+    const shuffled = [...participants.map(p => p.id)].sort(() => Math.random() - 0.5);
+    setOpeningSpeakerOrder(shuffled);
   };
 
   const handleUserMessage = (text: string) => {
@@ -304,7 +318,7 @@ export default function App() {
     setIsWaitingForUser(false);
     setAutoDebateCount(0);
     // Randomly assign 1-3 turns before returning to host
-    setCurrentRoundLimit(Math.floor(Math.random() * 3) + 1);
+    setCurrentRoundLimit(Math.floor(Math.random() * 5) + 1);
   };
 
   const handleSummarize = async () => {

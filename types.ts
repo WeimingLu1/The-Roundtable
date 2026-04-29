@@ -22,7 +22,7 @@ export interface Message {
   text: string;
   timestamp: number;
   isInterruption?: boolean;
-  stance?: string; // 'AGREE' | 'DISAGREE' | 'PARTIAL' | 'PIVOT' | 'NEUTRAL'
+  stance?: string; // 'AGREE' | 'DISAGREE' | 'PARTIAL' | 'PIVOT' | 'NEUTRAL' | 'SURPRISED' | 'INTRIGUED' | 'CHALLENGED' | 'CONCEDE' | 'BUILD_ON' | 'CLARIFY' | 'QUESTION'
   stanceIntensity?: number; // 1 (Weak) to 5 (Strong)
 }
 

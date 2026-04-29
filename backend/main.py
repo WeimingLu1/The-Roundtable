@@ -384,14 +384,20 @@ Rules:
 1. **HOST PRIORITY**: If the Host just spoke, their question/comment is the highest priority.
 {rule2}
 3. **STALLING**: If the debate is stalling, pick the person with the most opposing view.
+4. **ANTI-DOMINATION**: Avoid letting any single speaker dominate. If someone has spoken 3+ times in recent turns, prefer someone else.
 
-Return ONLY the ID (e.g., expert_1).
+Surprise the discussion occasionally by picking an unexpected speaker. Return ONLY the ID (e.g., expert_1).
 """
     try:
         text = await get_ai_response(prompt)
         speaker_id = text.strip()
         valid = next((p.id for p in req.participants if p.id == speaker_id), None)
         if valid:
+            # Occasionally (12%) override AI choice with a random different speaker
+            if random.random() < 0.12:
+                others = [p for p in req.participants if p.id != valid]
+                if others:
+                    valid = random.choice(others).id
             return {"speakerId": valid}
         # Safely filter out last speaker if last_message exists
         last_sender_id = last_message.senderId if last_message else None
@@ -423,7 +429,8 @@ Topic: "{req.topic}"
 
 Task: State your core argument clearly and naturally.
 - You MUST speak in {lang}. All output text must be in {lang}.
-- Speak like a real person in a podcast/salon, not a textbook.
+- Speak like a real person in a lively podcast/salon, not a textbook.
+- Vary your opening style: be provocative, personal, or storytelling -- not all openings should sound the same.
 - Be direct but polite.
 - Do not address other guests yet.
 - Keep it under 50 words.
@@ -460,7 +467,7 @@ Output: Just the spoken text in {lang}. No labels, no greetings.
     last_message = req.messageHistory[-1] if req.messageHistory else None
     host_just_spoke = last_message.senderId == "user" if last_message else False
     last_was_pivot = last_message.stance == "PIVOT" if last_message and last_message.stance else False
-    is_breadth_turn = not last_was_pivot and random.random() < 0.25 and not host_just_spoke
+    is_breadth_turn = not last_was_pivot and random.random() < (0.20 + 0.20 * (req.turnCount / max(1, req.maxTurns))) and not host_just_spoke
 
     strategy = "**STRATEGY: DIVERGE (Breadth)**. STOP dwelling on the current specific point. Abruptly SHIFT the lens to a NEW dimension. **MANDATORY**: Use stance 'PIVOT'." if is_breadth_turn else "**STRATEGY: CONVERGE (Depth)**. Drill deeper into the specific logic of the previous speaker."
 
@@ -485,7 +492,7 @@ Output: Just the spoken text in {lang}. No labels, no greetings.
     elif force_return_to_host:
         directives = f"PRIORITY: This is the end of the current debate round. INSTRUCTION: You MUST cue the Host (@{req.userContext.nickname}) with a specific OPEN-ENDED QUESTION. 禁止: Do not cue other experts."
     else:
-        directives = f"PRIORITY: Debate with your peers. INSTRUCTION: Address another expert from the panel. ABSOLUTE PROHIBITION: Do NOT address the Host (@{req.userContext.nickname})."
+        directives = f"PRIORITY: Debate with your peers. You MAY naturally address the Host (@{req.userContext.nickname}) if you genuinely want their opinion or have a question for them. However, the debate should primarily flow between experts -- do NOT address the Host in every message."
 
     prompt = f"""
 Context: A high-quality, intellectual roundtable discussion (Salon).
@@ -504,9 +511,20 @@ Transcript (Recent Context):
 ADDITIONAL RULES:
 1. **LANGUAGE**: You MUST speak in {req.userContext.language}. All output must be in {req.userContext.language}.
 2. **INTELLECTUAL FLEXIBILITY**: Do NOT be stubbornly dogmatic. If a previous speaker makes a strong point that contradicts your view, you should ACKNOWLEDGE it.
-3. **STANCE & INTENSITY**: Decide your attitude: [AGREE, DISAGREE, PARTIAL, PIVOT, NEUTRAL]. Intensity (1-5): 1=Mild, 5=Strong.
+3. **STANCE & INTENSITY**: Decide your emotional/cognitive reaction. Choose from:
+   [AGREE, DISAGREE, PARTIAL, PIVOT, NEUTRAL,
+    SURPRISED, INTRIGUED, CHALLENGED, CONCEDE, BUILD_ON, CLARIFY, QUESTION].
+   - AGREE/DISAGREE: React to the previous point. Intensity (1-5) sets strength: 1=Slightly, 5=Strongly.
+   - SURPRISED: Taken aback by what you just heard.
+   - INTRIGUED: Curious and want to explore further.
+   - CHALLENGED: Your own position feels threatened and you push back.
+   - CONCEDE: Yield a point to your opponent gracefully.
+   - BUILD_ON: Extend or amplify the previous speaker's idea with your own spin.
+   - CLARIFY: Correct a misunderstanding or sharpen a fuzzy point.
+   - QUESTION: Pose a probing question to push the debate forward.
+   - PIVOT: Shift to a new dimension (only when STRATEGY says DIVERGE).
 4. {strategy}
-5. **STYLE**: SINGLE FOCUS, EXTREME BREVITY (under 60 words), PLAIN LANGUAGE, DIRECTNESS.
+5. **STYLE**: SINGLE FOCUS, EXTREME BREVITY (under 60 words), PLAIN LANGUAGE, DIRECTNESS. Vary your tone -- be witty, passionate, or contemplative. Use occasional rhetorical devices for impact.
 
 Status:
 - Current Turn: {req.turnCount}/{req.maxTurns}.
@@ -519,6 +537,8 @@ Examples:
 "DISAGREE||5||I completely reject that premise because...||CONTINUE"
 "AGREE||4||You have convinced me...||CONTINUE"
 "PIVOT||5||That is interesting, but we are completely ignoring...||CONTINUE"
+"BUILD_ON||4||Excellent point about regulation. Let me add that market forces alone...||CONTINUE"
+"INTRIGUED||3||I have to say, that makes me curious about the implications for...||CONTINUE"
 
 Action is "WAIT" if force yielding, otherwise "CONTINUE".
 """
@@ -560,7 +580,9 @@ Action is "WAIT" if force yielding, otherwise "CONTINUE".
             action = ""
 
         # Validate and sanitize stance and intensity
-        valid_stances = {"AGREE", "DISAGREE", "PARTIAL", "PIVOT", "NEUTRAL"}
+        valid_stances = {"AGREE", "DISAGREE", "PARTIAL", "PIVOT", "NEUTRAL",
+                         "SURPRISED", "INTRIGUED", "CHALLENGED", "CONCEDE",
+                         "BUILD_ON", "CLARIFY", "QUESTION"}
         if stance not in valid_stances:
             logger.warning(f"Invalid stance '{stance}', defaulting to NEUTRAL")
             stance = "NEUTRAL"
@@ -586,10 +608,12 @@ async def generate_summary(req: GenerateSummaryRequest):
         for m in req.messageHistory
     ])
 
-    # Build participant context for summary
+    # Build participant context for summary (includes Host as a peer participant)
     participant_context = "\n".join([
         f"- {p.name} ({p.title}): Stance on topic = {p.stance}"
         for p in req.participants
+    ] + [
+        f"- {req.userContext.nickname} (HOST): Identity = {req.userContext.identity}. The Host is also a participant whose views should be summarized."
     ])
 
     prompt = f"""You are summarizing a high-quality intellectual roundtable discussion.
@@ -632,7 +656,7 @@ Return a JSON object with EXACTLY this structure:
 }}
 
 CRITICAL REQUIREMENTS:
-- "core_viewpoints" MUST have exactly {len(req.participants)} entries (one per participant). If a participant did not speak, use their known stance from the participant list.
+- "core_viewpoints" MUST have exactly {len(req.participants) + 1} entries (one per expert plus the Host "{req.userContext.nickname}"). The Host's viewpoint MUST be the LAST entry. Extract the Host's key points, memorable quotes, and stance from their messages in the transcript.
 - "key_discussion_moments" MUST have at least 2 entries.
 - "questions" MUST have at least 2 open questions.
 - "summary" must be substantive, not generic.
@@ -681,8 +705,9 @@ CRITICAL REQUIREMENTS:
         for vp in data.get("core_viewpoints", []):
             if not vp.get("most_memorable_quote"):
                 vp["most_memorable_quote"] = vp.get("key_points", [""])[0] if vp.get("key_points") else ""
-        # Validate core_viewpoints count matches participants
-        if len(data.get("core_viewpoints", [])) != len(req.participants):
+        expected_count = len(req.participants) + 1  # +1 for Host
+        # Validate core_viewpoints count matches participants + host
+        if len(data.get("core_viewpoints", [])) != expected_count:
             existing_speakers = {vp.get("speaker") for vp in data.get("core_viewpoints", [])}
             # Pad with missing participants (not by index, but by name lookup)
             for p in req.participants:
@@ -694,8 +719,18 @@ CRITICAL REQUIREMENTS:
                         "key_points": [],
                         "most_memorable_quote": ""
                     })
+            # If host is missing, add host viewpoint
+            host_name = req.userContext.nickname
+            if host_name not in existing_speakers:
+                data["core_viewpoints"].append({
+                    "speaker": host_name,
+                    "title": f"Host ({req.userContext.identity})",
+                    "stance": "Moderating the discussion",
+                    "key_points": [],
+                    "most_memorable_quote": ""
+                })
             # If still too few, also handle any undefined/null speaker entries
-            while len(data["core_viewpoints"]) < len(req.participants):
+            while len(data["core_viewpoints"]) < expected_count:
                 data["core_viewpoints"].append({
                     "speaker": "Unknown",
                     "title": "Guest",
@@ -704,8 +739,8 @@ CRITICAL REQUIREMENTS:
                     "most_memorable_quote": ""
                 })
             # Trim excess
-            if len(data["core_viewpoints"]) > len(req.participants):
-                data["core_viewpoints"] = data["core_viewpoints"][:len(req.participants)]
+            if len(data["core_viewpoints"]) > expected_count:
+                data["core_viewpoints"] = data["core_viewpoints"][:expected_count]
         return data
     except Exception as e:
         logger.error(f"Error generating summary: {e}")

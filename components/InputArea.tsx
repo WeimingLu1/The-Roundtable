@@ -64,8 +64,14 @@ export const InputArea: React.FC<InputAreaProps> = ({
         return prev.slice(0, lastAtIndex) + '@' + name + ' ';
       });
       setShowMentionPopup(false);
-      // Defer focus using requestAnimationFrame for reliable timing in React concurrent mode
-      requestAnimationFrame(() => textareaRef.current?.focus());
+      // Place cursor after the inserted mention name
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        const cursorPos = el.value.lastIndexOf('@' + name + ' ') + ('@' + name + ' ').length;
+        el.setSelectionRange(cursorPos, cursorPos);
+        el.focus();
+      });
   };
 
   useEffect(() => {

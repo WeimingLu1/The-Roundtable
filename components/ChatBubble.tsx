@@ -1,6 +1,6 @@
 import React, { useMemo, useCallback } from 'react';
 import { Message, Participant } from '../types';
-import { ThumbsUp, ThumbsDown, GitBranch, Minus, Hand } from 'lucide-react';
+import { ThumbsUp, ThumbsDown, GitBranch, Minus, Hand, Lightbulb, MessageCircle, AlertTriangle, Flag, PlusCircle, HelpCircle, Zap } from 'lucide-react';
 
 // Helper to escape characters for Regex - moved outside component
 const escapeRegExp = (string: string) => {
@@ -153,6 +153,41 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, sender, partici
             icon = <GitBranch size={10} />;
             text = 'Shifting Topic';
             break;
+        case 'SURPRISED':
+            colorClass = 'bg-purple-500/20 text-purple-400 border-purple-500/30';
+            icon = <Zap size={10} />;
+            text = 'Surprised';
+            break;
+        case 'INTRIGUED':
+            colorClass = 'bg-amber-500/20 text-amber-400 border-amber-500/30';
+            icon = <Lightbulb size={10} />;
+            text = 'Intrigued';
+            break;
+        case 'CHALLENGED':
+            colorClass = 'bg-orange-500/20 text-orange-400 border-orange-500/30';
+            icon = <AlertTriangle size={10} />;
+            text = 'Challenged';
+            break;
+        case 'CONCEDE':
+            colorClass = 'bg-teal-500/20 text-teal-400 border-teal-500/30';
+            icon = <Flag size={10} />;
+            text = 'Concedes';
+            break;
+        case 'BUILD_ON':
+            colorClass = 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30';
+            icon = <MessageCircle size={10} />;
+            text = 'Building On';
+            break;
+        case 'CLARIFY':
+            colorClass = 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30';
+            icon = <PlusCircle size={10} />;
+            text = 'Clarifying';
+            break;
+        case 'QUESTION':
+            colorClass = 'bg-pink-500/20 text-pink-400 border-pink-500/30';
+            icon = <HelpCircle size={10} />;
+            text = 'Questioning';
+            break;
         default:
             return null;
     }
@@ -181,8 +216,9 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, sender, partici
                  {renderRichText(message.text)}
              </p>
           </div>
+          {renderStanceBadge()}
           <div className="text-right mt-1 mr-1">
-             <span className="text-[10px] font-bold uppercase tracking-widest text-md-outline">You (Host)</span>
+             <span className="text-[10px] font-bold uppercase tracking-widest text-md-outline">{hostName || 'You'} (Host)</span>
           </div>
         </div>
       </div>
