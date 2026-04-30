@@ -159,35 +159,57 @@ def _extract_from_thinking(text: str, json_mode: bool = False) -> str:
             return json_match.group(0).strip()
         return None
 
-    lines = [l.strip() for l in cleaned.split('\n') if l.strip()]
-    if not lines:
-        return cleaned
+    # Strategy 1: Find quoted text that looks like a debate topic (most reliable)
+    # Match: "topic text" or 「topic text」or \"topic text\"
+    topic_candidates = re.findall(
+        r'[""「]([^""」]{5,80}?)[""」]',
+        cleaned
+    )
+    for candidate in reversed(topic_candidates):  # Last quoted text is usually the answer
+        candidate = candidate.strip()
+        # Must look like a debate topic: contains key debate indicators
+        if candidate and len(candidate) >= 5:
+            # Accept if it's a question or contains debate-worthy keywords
+            if '?' in candidate or '？' in candidate or any(
+                kw in candidate for kw in ['是否', '应该', '应当', '可以', '必须', 'should', 'must', 'can', 'will', 'is', 'are', 'does', 'do']
+            ):
+                return candidate
 
-    meta_patterns = [
-        r'^(thinking|思考|thoughts?)[：:]', r'^(thus|therefore|so|hence)[,\s]',
-        r'^(we can|we must|we need|we should|i think|i will|i would|i need|i must|i can|i should)\b',
-        r'^(let me|let us|let\'s)\b', r'^(the answer|the topic|the response|the question)\b',
-        r'^(alternatively|however|but|looking|based on|given|according)\b',
-        r'^(this is|that is|it is|there is|these are)\b', r'^(note[:]|ps[.:]|p\.s\.)',
-        r'^(in conclusion|to conclude|in summary|finally|lastly)\b',
-        r'^(the (user|prompt|instruction|model|assistant))\b',
-        r'^(a (provocative|debatable|good|better|possible))\b',
-        r'^(one (possible|option|approach|way))\b',
-    ]
-    for i in range(len(lines) - 1, -1, -1):
-        line = lines[i]
-        is_meta = any(re.match(pat, line, re.IGNORECASE) for pat in meta_patterns)
-        if not is_meta and len(line) >= 3:
-            # Clean up leading hedges and trailing commentary
-            line = re.sub(r'^(Maybe|Perhaps|Possibly|或许|也许|可能)\s+', '', line, flags=re.IGNORECASE)
-            line = re.sub(r'\s*Count[：:\s].*$', '', line, flags=re.IGNORECASE)
-            line = re.sub(r'\s*That\'?s?\s+\d+\s+(characters|words).*$', '', line, flags=re.IGNORECASE)
-            line = re.sub(r'\s*\(\d+\s*(chars|characters|words|字)\).*$', '', line, flags=re.IGNORECASE)
-            line = re.sub(r'\s+\d+\s*(chars|characters|words|字)\s*$', '', line, flags=re.IGNORECASE)
-            line = line.strip().strip('"').strip()
-            if line:
-                return line
-    return lines[-1]
+    # Strategy 2: Line-by-line backwards scan
+    lines = [l.strip() for l in cleaned.split('\n') if l.strip()]
+    if lines:
+        meta_patterns = [
+            r'^(thinking|思考|thoughts?)[：:]', r'^(thus|therefore|so|hence)[,\s]',
+            r'^(we can|we must|we need|we should|i think|i will|i would|i need|i must|i can|i should)\b',
+            r'^(let me|let us|let\'s)\b', r'^(the answer|the topic|the response|the question)\b',
+            r'^(alternatively|however|but|looking|based on|given|according)\b',
+            r'^(this is|that is|it is|there is|these are)\b', r'^(note[:]|ps[.:]|p\.s\.)',
+            r'^(in conclusion|to conclude|in summary|finally|lastly)\b',
+            r'^(the (user|prompt|instruction|model|assistant))\b',
+            r'^(a (provocative|debatable|good|better|possible))\b',
+            r'^(one (possible|option|approach|way))\b',
+            r'^(but|and)\s+(maybe|perhaps).*',
+            r'^(actually|like|sort of|kind of).*',
+        ]
+        for i in range(len(lines) - 1, -1, -1):
+            line = lines[i]
+            is_meta = any(re.match(pat, line, re.IGNORECASE) for pat in meta_patterns)
+            if not is_meta and len(line) >= 3:
+                line = re.sub(r'^(Maybe|Perhaps|Possibly|或许|也许|可能|But maybe|But perhaps)\s+', '', line, flags=re.IGNORECASE)
+                line = re.sub(r'\s*Count[：:\s].*$', '', line, flags=re.IGNORECASE)
+                line = re.sub(r'\s*That\'?s?\s+\d+\s+(characters|words).*$', '', line, flags=re.IGNORECASE)
+                line = re.sub(r'\s*\(\d+\s*(chars|characters|words|字)\).*$', '', line, flags=re.IGNORECASE)
+                line = re.sub(r'\s+\d+\s*(chars|characters|words|字)\s*$', '', line, flags=re.IGNORECASE)
+                line = re.sub(r'\s*Actually that\'?s?\s+\d+\s+(characters|words).*$', '', line, flags=re.IGNORECASE)
+                line = line.strip().strip('"').strip()
+                if line:
+                    return line
+
+    # Strategy 3: Try to find any quoted text as last resort
+    if topic_candidates:
+        return topic_candidates[-1].strip()
+
+    return cleaned
 
 
 async def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int = 1024) -> str:
@@ -197,11 +219,11 @@ async def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int 
         "model": MODEL,
         "max_tokens": max_tokens,
         "messages": [{"role": "user", "content": prompt}],
-        "thinking": {"type": "disabled"},
+        "extra_body": {"thinking": {"type": "disabled"}},
     }
 
     if json_mode:
-        data["extra_body"] = {"response_format": {"type": "json_object"}}
+        data["extra_body"]["response_format"] = {"type": "json_object"}
         data["messages"] = [{"role": "user", "content": prompt.rstrip() + "\n\nRespond with ONLY valid JSON. No explanation, no markdown."}]
         data["max_tokens"] = max(4096, max_tokens)
 
@@ -281,7 +303,53 @@ Respond with ONLY the topic text, no explanation, no labels."""
         text = await get_ai_response(prompt, max_tokens=512)
         if not text or len(text.strip()) < 5:
             raise ValueError("Empty or too short response from AI")
-        return {"topic": text.strip()}
+
+        topic = text.strip()
+
+        # Clean up meta-commentary when model ignores "ONLY the topic text" instruction
+        # Strip common thinking/commentary patterns
+        commentary_patterns = [
+            r"(?i)^(that'?s?\s+a\s+)?(provocative|debatable|interesting|good|great|excellent|nice)\s.*",
+            r"(?i)^(this|that|it)\s+(is\s+)?(definitely|certainly|surely|absolutely|clearly)\s+.*",
+            r"(?i)^(under|about|around|approximately)\s+\d+\s+(characters|words|chars|字).*",
+            r"(?i)^(the\s+)?(topic|question|statement|answer)\s+(is|would\s+be|should\s+be)[：:]?\s*",
+            r"(?i)^(i\s+think|i\s+believe|i\s+would|i\s+will|i\'ll|let\s+me|we\s+can|we\s+should|we\s+could).*",
+            r"(?i)^(maybe|perhaps|possibly|或许|也许|可能)\s+.*",
+            r"^[Tt]hat'?s?\s+a\s+.*",
+            r"^\d+\s+(characters|words|chars|字).*",
+            r"(?i)^(so|thus|therefore|hence|okay|ok|alright|well|hmm|um|uh)[,.\s].*",
+            r"^[\(（].*[\)）]$",
+            r"^.*(is\s+definitely\s+debatable).*",
+            r"^.*(\.|\。)\s*(Good|Great|Nice|OK|Perfect|Done)\.?$",
+        ]
+
+        # Try to find the real topic by stripping commentary
+        lines = topic.split('\n')
+        cleaned_lines = []
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            # Skip pure meta-commentary lines
+            is_meta = any(re.match(pat, stripped) for pat in commentary_patterns)
+            if not is_meta and len(stripped) >= 3:
+                cleaned_lines.append(stripped)
+
+        if cleaned_lines:
+            topic = cleaned_lines[-1]  # Last non-meta line is usually the answer
+        elif lines:
+            topic = lines[-1].strip()
+
+        # Final cleanup: strip quotes, trailing punctuation commentary
+        topic = topic.strip().strip('"').strip()
+        topic = re.sub(r'\s*[(（]\d+\s*(chars|characters|words|字)[)）]\s*$', '', topic, flags=re.IGNORECASE)
+        topic = re.sub(r'\s*[-–—]\s*\d+\s*(chars|characters|words|字)\s*$', '', topic, flags=re.IGNORECASE)
+        # Strip trailing "Good.", "Great.", etc.
+        topic = re.sub(r'\s*(Good|Great|Nice|OK|Perfect|Done|好了|完成)[.。!！]?\s*$', '', topic, flags=re.IGNORECASE)
+
+        if not topic or len(topic.strip()) < 5:
+            raise ValueError("Topic too short or empty after cleanup")
+        return {"topic": topic.strip()}
     except httpx.HTTPStatusError as e:
         logger.error(f"HTTP error generating random topic: {e.response.status_code}")
         raise ValueError(f"AI service unavailable (HTTP {e.response.status_code})")
@@ -532,29 +600,57 @@ Topic: "{req.topic}"
 
 Task: State your core argument clearly and naturally.
 - You MUST speak in {lang}. All output text must be in {lang}.
-- Speak like a real person in a lively podcast/salon, not a textbook.
+- SPEAK IN CHARACTER: Do NOT sound like a generic AI. Your speech must reflect YOUR specific background and personality. If you are an entertainer, speak with emotional intuition and cultural references. If you are a scientist, speak with analytical precision. If you are an activist, speak with passion. Let your real persona shine through.
 - Vary your opening style: be provocative, personal, or storytelling -- not all openings should sound the same.
 - Be direct but polite.
 - Do not address other guests yet.
 - Keep it under 50 words.
 - ABSOLUTE PROHIBITION: Do NOT start with greetings like "Hello", "Hi everyone", "Good morning", "很高兴", "大家好", etc. Start directly with your substantive argument.
 
-Output: Just the spoken text in {lang}. No labels, no greetings.
+**OUTPUT FORMAT**: "SPEECH|||ACTION_DESC"
+- SPEECH: your spoken opening statement in {lang}
+- ACTION_DESC: 1 vivid sentence in {lang} describing your body language/facial expression as you speak (third person)
+
+Example:
+"我认为这个问题的核心在于人性的本质。|||她微微前倾，双手交叠放在桌上，目光坚定而温和地扫过在场的每一个人"
 """
         try:
             text = await get_ai_response(prompt)
-            if not text or len(text.strip()) < 3:
+            raw = text.strip()
+            parts = raw.split('|||', 1)
+            speech = parts[0].strip() if len(parts) >= 1 else raw
+            action_desc = parts[1].strip() if len(parts) >= 2 else ""
+
+            if not speech or len(speech) < 3:
                 raise ValueError("Opening statement too short or empty")
             # Reject greeting-only responses
             greeting_patterns = ["hello", "hi", "good morning", "good afternoon", "good evening", "很高兴", "大家好", "各位好", "很高兴认识", "您好", "你好", "嗨", "greetings", "hey", "welcome", "dear", "亲爱的", "早", "晚上好", "下午好"]
-            text_lower = text.strip().lower()
+            text_lower = speech.strip().lower()
             if any(text_lower.startswith(g) for g in greeting_patterns):
-                raise OpeningStatementRejected(f"Opening statement starts with greeting: {text[:50]}")
-            return {"text": text.strip(), "stance": speaker.stance, "stanceIntensity": 3, "shouldWaitForUser": False}
+                raise OpeningStatementRejected(f"Opening statement starts with greeting: {speech[:50]}")
+
+            # Validate action_desc: discard if it looks like thinking
+            if action_desc:
+                thinking_signals = [
+                    "the user is asking", "policy violation", "disallowed",
+                    "there's no", "this is a request", "no policy",
+                    "it's just", "we should"
+                ]
+                if any(s in action_desc.lower() for s in thinking_signals):
+                    logger.warning(f"Action desc looks like thinking, discarding: {action_desc[:80]}...")
+                    action_desc = ""
+
+            return {
+                "text": speech,
+                "stance": speaker.stance,
+                "stanceIntensity": 3,
+                "shouldWaitForUser": False,
+                "actionDescription": action_desc
+            }
         except OpeningStatementRejected:
-            raise  # Re-raise with original message for retry
+            raise
         except ValueError:
-            raise  # Re-raise ValueError as-is for intentional rejections
+            raise
         except Exception as e:
             logger.error(f"Opening statement error: {e}")
             raise ValueError(f"Opening statement generation failed: {str(e)}")
@@ -603,8 +699,11 @@ Topic: "{req.topic}"
 Host: {req.userContext.nickname}
 Valid Participants: {valid_names_list}
 
-You are: {speaker_name} ({speaker.title}).
-Starting Philosophy: {speaker.stance}.
+CHARACTER CONTEXT:
+- You are {speaker_name}, {speaker.title}.
+- Your stance: {speaker.stance}.
+- SPEAK IN CHARACTER: Do NOT sound like a generic AI. Your speech MUST reflect YOUR specific background, personality, and way of thinking. An entertainer speaks with emotional intuition and cultural references. A scientist speaks with analytical precision. An activist speaks with fire and urgency. A philosopher speaks with thoughtful nuance. Let your real-world persona dictate your vocabulary, sentence rhythm, and emotional tone. Sound like YOURSELF, not like a polite assistant.
+- Express emotions naturally: excitement, frustration, humor, skepticism, wonder — whatever fits your character and the moment.
 
 Transcript (Recent Context):
 {recent_history}
@@ -627,37 +726,52 @@ ADDITIONAL RULES:
    - QUESTION: Pose a probing question to push the debate forward.
    - PIVOT: Shift to a new dimension (only when STRATEGY says DIVERGE).
 4. {strategy}
-5. **STYLE**: SINGLE FOCUS, EXTREME BREVITY (under 60 words), PLAIN LANGUAGE, DIRECTNESS. Vary your tone -- be witty, passionate, or contemplative. Use occasional rhetorical devices for impact.
+5. **STYLE**: SINGLE FOCUS, EXTREME BREVITY (under 60 words), PLAIN LANGUAGE, DIRECTNESS. Vary your tone — be witty, passionate, or contemplative. Use occasional rhetorical devices for impact.
 
 Status:
 - Current Turn: {req.turnCount}/{req.maxTurns}.
 - Force Yield to Host: {force_return_to_host}.
 
 Instruction:
-**OUTPUT FORMAT STRICTLY**: "STANCE||INTENSITY||MESSAGE||ACTION"
+**OUTPUT FORMAT STRICTLY**: "STANCE||INTENSITY||MESSAGE||ACTION||ACTION_DESCRIPTION"
 
-Examples:
-"DISAGREE||5||I completely reject that premise because...||CONTINUE"
-"AGREE||4||You have convinced me...||CONTINUE"
-"PIVOT||5||That is interesting, but we are completely ignoring...||CONTINUE"
-"BUILD_ON||4||Excellent point about regulation. Let me add that market forces alone...||CONTINUE"
-"INTRIGUED||3||I have to say, that makes me curious about the implications for...||CONTINUE"
+ACTION is "WAIT" if force yielding, otherwise "CONTINUE".
 
-Action is "WAIT" if force yielding, otherwise "CONTINUE".
+ACTION_DESCRIPTION: A VIVID, CINEMATIC 1-2 sentence description of your physical actions, facial expressions, and body language as you speak. This is a STAGE DIRECTION, not dialogue. Write in third person. Be SPECIFIC, VISUAL, and AUTHENTIC to your character. Use rich sensory detail.
+
+Examples of ACTION_DESCRIPTION:
+- "迪丽热巴微微蹙眉，纤细的手指轻轻敲击着桌面，嘴角却挂着一丝若有若无的笑意，眼神中闪过一丝狡黠"
+- "Elon Musk leans forward abruptly, elbows planted on the table, eyes blazing with intensity as his hands carve emphatic shapes in the air"
+- "姚明露出惊讶的表情，随即仰头爽朗大笑，宽阔的肩膀随着笑声微微颤动，整个人的气场轻松而自信"
+- "Taylor Swift tilts her head thoughtfully, tucking a strand of hair behind her ear, then leans in with quiet, unwavering conviction"
+- "李开复推了推眼镜，沉吟片刻才缓缓开口，声音不高却字字有力"
+- "Gordon Ramsay slams his palm on the table, face reddening, then catches himself and lets out a sharp, incredulous laugh"
+
+Full example outputs:
+"DISAGREE||5||I completely reject that premise because...||CONTINUE||姚明露出惊讶的表情，随即仰头爽朗大笑，宽阔的肩膀随着笑声微微颤动"
+"AGREE||4||You have convinced me...||CONTINUE||Taylor Swift tilts her head thoughtfully, tucking a strand of hair behind her ear before responding with quiet conviction"
+"PIVOT||5||That is interesting, but we are completely ignoring...||CONTINUE||迪丽热巴纤细的手指轻轻敲击着桌面，眼神中闪过一丝狡黠的光芒"
 """
     try:
         text = await get_ai_response(prompt)
         raw = text.strip()
-        # Split only on first 3 delimiters so message can legitimately contain ||
-        parts = raw.split('||', 3)
+        # Split on first 4 delimiters: STANCE||INTENSITY||MESSAGE||ACTION||ACTION_DESCRIPTION
+        parts = raw.split('||', 4)
 
         stance = "NEUTRAL"
         intensity = 3
         message = ""
         action = ""
+        action_description = ""
 
         try:
-            if len(parts) >= 4:
+            if len(parts) >= 5:
+                stance = parts[0].strip().upper() if parts[0] else "NEUTRAL"
+                intensity = int(parts[1].strip()) if parts[1].strip().isdigit() else 3
+                message = parts[2].strip()
+                action = parts[3].strip()
+                action_description = parts[4].strip()
+            elif len(parts) == 4:
                 stance = parts[0].strip().upper() if parts[0] else "NEUTRAL"
                 intensity = int(parts[1].strip()) if parts[1].strip().isdigit() else 3
                 message = parts[2].strip()
@@ -677,7 +791,6 @@ Action is "WAIT" if force yielding, otherwise "CONTINUE".
             else:
                 message = raw
         except ValueError:
-            # Malformed output — fall back to raw text
             stance = "NEUTRAL"
             intensity = 3
             action = ""
@@ -693,11 +806,24 @@ Action is "WAIT" if force yielding, otherwise "CONTINUE".
 
         should_wait = "WAIT" in action.upper() or force_return_to_host or (re.search(r'\B@' + re.escape(req.userContext.nickname) + r'(?:\s|$|[^a-zA-Z0-9])', message, re.IGNORECASE) and "?" in message and req.turnCount > 0)
 
+        # Sanitize action_description: discard if it looks like thinking/meta-commentary
+        if action_description:
+            thinking_signals = [
+                "the user is asking", "policy", "disallowed",
+                "用户要求", "用户想要", "the user wants",
+                "there's no", "this is a request", "no policy",
+                "it's just", "we should", "no issue"
+            ]
+            if any(s in action_description.lower() for s in thinking_signals):
+                logger.warning(f"Action description looks like thinking, discarding: {action_description[:80]}...")
+                action_description = ""
+
         return {
             "text": message,
             "stance": stance,
             "stanceIntensity": intensity,
-            "shouldWaitForUser": should_wait
+            "shouldWaitForUser": should_wait,
+            "actionDescription": action_description
         }
     except Exception as e:
         logger.error(f"Error generating turn: {e}")

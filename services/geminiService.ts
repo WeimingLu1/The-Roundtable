@@ -169,7 +169,7 @@ export const generateTurnForSpeaker = async (
   isOpeningStatement: boolean = false,
   mentionedParticipantId?: string,
   abortSignal?: AbortSignal
-): Promise<{ text: string; stance?: string; stanceIntensity?: number; shouldWaitForUser: boolean }> => {
+): Promise<{ text: string; stance?: string; stanceIntensity?: number; shouldWaitForUser: boolean; actionDescription?: string }> => {
   try {
     return await apiCall('/api/generate_turn', {
       speakerId,
@@ -191,7 +191,7 @@ export const generateTurnForSpeaker = async (
         : `Thank you for that perspective. I believe we should consider this from multiple angles.`,
       stance: undefined,
       stanceIntensity: undefined,
-      shouldWaitForUser: true  // Break the loop on failure; let the user decide next action
+      shouldWaitForUser: true
     };
   }
 };

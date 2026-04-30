@@ -24,6 +24,7 @@ export interface Message {
   isInterruption?: boolean;
   stance?: string; // 'AGREE' | 'DISAGREE' | 'PARTIAL' | 'PIVOT' | 'NEUTRAL' | 'SURPRISED' | 'INTRIGUED' | 'CHALLENGED' | 'CONCEDE' | 'BUILD_ON' | 'CLARIFY' | 'QUESTION'
   stanceIntensity?: number; // 1 (Weak) to 5 (Strong)
+  actionDescription?: string; // Vivid character action, e.g. "迪丽热巴露出惊讶的表情，随后掩嘴轻笑"
 }
 
 export enum AppState {

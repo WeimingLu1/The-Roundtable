@@ -229,7 +229,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, sender, partici
   return (
     <div className="flex justify-start mb-6 animate-fade-in-up group items-end gap-3">
       {/* Avatar */}
-      <div 
+      <div
         className="w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center text-white text-xs font-bold shadow-sm mb-4 border border-white/10"
         style={{ backgroundColor: sender?.color || '#333' }}
       >
@@ -237,12 +237,21 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, sender, partici
       </div>
 
       <div className="max-w-[85%] md:max-w-[75%]">
+        {/* Action Description - Cinematic stage direction */}
+        {message.actionDescription && (
+          <div className="mb-2 ml-1 animate-fade-in">
+            <p className="text-xs italic leading-relaxed text-md-secondary/70 border-l-2 border-md-accent/30 pl-3 py-1 font-serif tracking-wide">
+              {message.actionDescription}
+            </p>
+          </div>
+        )}
+
         <div className="bg-md-surface-container-low p-5 rounded-3xl rounded-tl-none border border-white/5 shadow-elevation-1">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 mb-1">
              <span className="font-bold text-sm" style={{ color: sender?.color }}>{sender?.name}</span>
              <span className="text-[10px] text-md-outline uppercase opacity-80 leading-tight">{sender?.title}</span>
           </div>
-          
+
           {/* Stance Badge */}
           {renderStanceBadge()}
 

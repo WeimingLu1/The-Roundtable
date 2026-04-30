@@ -128,6 +128,7 @@ export default function App() {
         text: result.text,
         stance: result.stance,
         stanceIntensity: result.stanceIntensity,
+        actionDescription: result.actionDescription,
         timestamp: Date.now()
       };
       setMessages(prev => [...prev, newMessage]);
@@ -198,6 +199,7 @@ export default function App() {
           text: result.text,
           stance: result.stance,
           stanceIntensity: result.stanceIntensity,
+          actionDescription: result.actionDescription,
           timestamp: Date.now()
         };
 
