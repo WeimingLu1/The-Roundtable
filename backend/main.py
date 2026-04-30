@@ -145,30 +145,67 @@ class GenerateSummaryRequest(BaseModel):
 
 
 # --- Helper ---
+def _extract_from_thinking(text: str, json_mode: bool = False) -> str:
+    """Try to extract the actual answer from a thinking block when the model ignores thinking_enabled=False."""
+    cleaned = re.sub(r'^(thinking|思考|thoughts?)[：:]\s*', '', text.strip(), flags=re.IGNORECASE)
+
+    if json_mode:
+        json_match = re.search(r'\{[^{}]*"name"[^{}]*"title"[^{}]*"stance"[^{}]*\}', cleaned, re.DOTALL)
+        if not json_match:
+            json_match = re.search(r'\{[^{}]*"topic"[^{}]*"summary"[^{}]*\}', cleaned, re.DOTALL)
+        if not json_match:
+            json_match = re.search(r'\{.*\}', cleaned, re.DOTALL)
+        if json_match:
+            return json_match.group(0).strip()
+        return None
+
+    lines = [l.strip() for l in cleaned.split('\n') if l.strip()]
+    if not lines:
+        return cleaned
+
+    meta_patterns = [
+        r'^(thinking|思考|thoughts?)[：:]', r'^(thus|therefore|so|hence)[,\s]',
+        r'^(we can|we must|we need|we should|i think|i will|i would|i need|i must|i can|i should)\b',
+        r'^(let me|let us|let\'s)\b', r'^(the answer|the topic|the response|the question)\b',
+        r'^(alternatively|however|but|looking|based on|given|according)\b',
+        r'^(this is|that is|it is|there is|these are)\b', r'^(note[:]|ps[.:]|p\.s\.)',
+        r'^(in conclusion|to conclude|in summary|finally|lastly)\b',
+        r'^(the (user|prompt|instruction|model|assistant))\b',
+        r'^(a (provocative|debatable|good|better|possible))\b',
+        r'^(one (possible|option|approach|way))\b',
+    ]
+    for i in range(len(lines) - 1, -1, -1):
+        line = lines[i]
+        is_meta = any(re.match(pat, line, re.IGNORECASE) for pat in meta_patterns)
+        if not is_meta and len(line) >= 3:
+            # Clean up leading hedges and trailing commentary
+            line = re.sub(r'^(Maybe|Perhaps|Possibly|或许|也许|可能)\s+', '', line, flags=re.IGNORECASE)
+            line = re.sub(r'\s*Count[：:\s].*$', '', line, flags=re.IGNORECASE)
+            line = re.sub(r'\s*That\'?s?\s+\d+\s+(characters|words).*$', '', line, flags=re.IGNORECASE)
+            line = re.sub(r'\s*\(\d+\s*(chars|characters|words|字)\).*$', '', line, flags=re.IGNORECASE)
+            line = re.sub(r'\s+\d+\s*(chars|characters|words|字)\s*$', '', line, flags=re.IGNORECASE)
+            line = line.strip().strip('"').strip()
+            if line:
+                return line
+    return lines[-1]
+
+
 async def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int = 1024) -> str:
     client = await get_http_client()
-
-    headers = {
-        "Authorization": "Bearer ***",  # Mask API key in logs
-        "Content-Type": "application/json",
-        "anthropic-version": "2023-06-01"
-    }
 
     data = {
         "model": MODEL,
         "max_tokens": max_tokens,
         "messages": [{"role": "user", "content": prompt}],
-        "extra_body": {"thinking_enabled": False}
+        "thinking": {"type": "disabled"},
     }
 
     if json_mode:
-        data["extra_body"]["response_format"] = {"type": "json_object"}
+        data["extra_body"] = {"response_format": {"type": "json_object"}}
         data["messages"] = [{"role": "user", "content": prompt.rstrip() + "\n\nRespond with ONLY valid JSON. No explanation, no markdown."}]
-        # For JSON mode, use a generous token limit to avoid API issues
         data["max_tokens"] = max(4096, max_tokens)
 
     logger.debug(f"Calling AI API with prompt length: {len(prompt)}")
-    # Actual headers with API key (not logged)
     request_headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -178,13 +215,10 @@ async def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int 
     response.raise_for_status()
     result = response.json()
 
-    # Extract text from response
-    # MiniMax reasoning models return both thinking and text blocks.
-    # Always prefer text blocks over thinking blocks.
     content = result.get("content", [])
     logger.info(f"AI response content types: {[b.get('type') for b in content]}")
 
-    # Pass 1: prefer text blocks (the actual response)
+    # Pass 1: prefer text blocks
     for block in content:
         if block.get("type") == "text":
             text_result = block.get("text", "").strip()
@@ -198,12 +232,18 @@ async def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int 
                         text_result = "\n".join(lines[1:]).strip()
                 return text_result
 
-    # Pass 2: fallback to thinking blocks
+    # Pass 2: fallback to thinking blocks — try to extract the real answer
     for block in content:
         if block.get("type") in ("thinking", "redacted_thinking"):
             thinking_text = block.get("thinking", "") or block.get("text", "") or ""
             if thinking_text.strip():
-                logger.info(f"Falling back to {block.get('type')} block")
+                logger.warning(f"No text block found, extracting from {block.get('type')} block")
+                extracted = _extract_from_thinking(thinking_text.strip(), json_mode)
+                if extracted:
+                    logger.info(f"Extracted from thinking: {extracted[:100]}...")
+                    return extracted
+                if json_mode:
+                    raise ValueError("Failed to extract JSON from thinking-only response")
                 return thinking_text.strip()
 
     logger.error(f"Raw AI response: {json.dumps(result, indent=2)[:2000]}")
@@ -214,7 +254,29 @@ async def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int 
 @app.post("/api/generate_random_topic")
 async def generate_random_topic(req: GenerateRandomTopicRequest):
     lang_instruction = "in Chinese" if req.language.lower() == "chinese" else "in English" if req.language.lower() == "english" else f"in {req.language}"
-    prompt = f"Generate a short, interesting debate topic {lang_instruction}. Make it thought-provoking and suitable for panel discussion. Respond with ONLY the topic text, no explanation."
+
+    # Pre-pick a random domain to force diversity — prevents model from defaulting to AI
+    domains_en = [
+        "politics", "philosophy", "ethics", "society", "economics", "education",
+        "environment", "culture", "health", "law", "urban life", "psychology",
+        "art", "sports", "food and agriculture", "history", "media and journalism",
+        "family and relationships", "religion", "criminal justice"
+    ]
+    domains_cn = [
+        "政治", "哲学", "伦理", "社会", "经济", "教育",
+        "环境", "文化", "健康", "法律", "城市生活", "心理学",
+        "艺术", "体育", "食品与农业", "历史", "媒体与新闻",
+        "家庭与关系", "宗教", "刑事司法"
+    ]
+    is_chinese = req.language.lower() == "chinese"
+    domain = random.choice(domains_cn if is_chinese else domains_en)
+
+    prompt = f"""Generate ONE debate topic {lang_instruction} in the domain of {domain}.
+
+The topic must be a provocative, debatable question or statement that intelligent people disagree on. Keep it under 15 words.
+
+Respond with ONLY the topic text, no explanation, no labels."""
+
     try:
         text = await get_ai_response(prompt, max_tokens=512)
         if not text or len(text.strip()) < 5:
@@ -238,12 +300,13 @@ async def generate_panel(req: GeneratePanelRequest):
     prompt = f"""Topic: {req.topic}
 Language: {lang_name}
 
-Select 3 diverse, ALIVE, REAL experts who are DIRECTLY relevant to this specific topic. Each expert must have genuine expertise related to the debate topic.
+Select 3 diverse, REAL, LIVING people who can offer compelling, contrasting perspectives on this topic.
 
 CRITICAL REQUIREMENTS:
-- Expert names, titles, and stances MUST be in {lang_name}.
-- Each expert's stance must be specifically about "{req.topic}".
-- Experts must be real, well-known people whose work relates to this topic.
+- Choose people whose voices would create a LIVELY, UNPREDICTABLE debate. Mix backgrounds: academics, practitioners, artists, cultural critics, entrepreneurs, activists, philosophers, journalists, public intellectuals. Do NOT pick only professors and researchers.
+- Each person must have a clear, distinct stance on "{req.topic}".
+- Names, titles, and stances MUST be in {lang_name}.
+- Think: who would make this a conversation worth listening to? Controversial but thoughtful figures are welcome.
 
 Return JSON:
 {{"participants": [{{"name": "?", "title": "?", "stance": "?"}}]}}"""
@@ -305,13 +368,23 @@ Return JSON:
 @app.post("/api/generate_single_participant")
 async def generate_single_participant(req: GenerateSingleParticipantRequest):
     lang_name = "Chinese" if req.userContext.language.lower() == "chinese" else req.userContext.language
-    prompt = f"""User: {req.inputQuery}
+    prompt = f"""User Input: {req.inputQuery}
 Topic: {req.topic}
 Language: {lang_name}
 
-Identify this person. Return a real, living person most relevant to the topic.
-CRITICAL: Name, title, and stance MUST be in {lang_name}.
-Return JSON: {{"name":"?","title":"?","stance":"?"}}"""
+IMPORTANT: Determine whether the user typed a specific person's name or a general description.
+
+CASE 1 — SPECIFIC PERSON NAME: If "{req.inputQuery}" is the name of a specific real person (e.g., "迪丽热巴", "Taylor Swift", "Elon Musk", "梅西", "周杰伦"), you MUST return THAT EXACT person.
+- The "name" field MUST equal "{req.inputQuery}" (or the standard form of that person's name in {lang_name}).
+- The "title" field MUST be their real occupation (e.g., "演员/Actress", "歌手/Singer", "足球运动员/Football Player").
+- The "stance" field MUST be a plausible, thoughtful position this specific person might take on the topic "{req.topic}". Even if they are not a traditional expert, construct a fair, interesting stance from their public persona. Everyone has opinions.
+- DO NOT replace this person with someone "more relevant" to the topic. The user chose them deliberately.
+
+CASE 2 — GENERAL DESCRIPTION: If "{req.inputQuery}" is a description, role, or organization (e.g., "a famous economist", "百度CEO", "an environmental activist"), find the best real, living person who matches that description and is relevant to the topic "{req.topic}".
+- The "name" field should be that person's real name.
+
+All fields MUST be in {lang_name}.
+Return ONLY valid JSON: {{"name":"?","title":"?","stance":"?"}}"""
     try:
         text = await get_ai_response(prompt, json_mode=True, max_tokens=384)
         data = json.loads(text)
@@ -320,6 +393,36 @@ Return JSON: {{"name":"?","title":"?","stance":"?"}}"""
         for key in ("name", "title", "stance"):
             if not data.get(key):
                 raise ValueError(f"Missing required field '{key}' in single participant response: {data}")
+
+        # Guard: if input is clearly a specific person's name but AI returned a
+        # completely different name, restore the input name.
+        input_clean = req.inputQuery.strip()
+        ai_name = (data.get("name") or "").strip()
+
+        def is_person_name(s: str) -> bool:
+            """Heuristic: returns True if s looks like a specific person's name, not a role/description."""
+            # Pure Chinese name: 2-4 chars, all CJK (no Latin letters, no digits, no role words)
+            if all('一' <= c <= '鿿' or '㐀' <= c <= '䶿' for c in s):
+                if 2 <= len(s) <= 4:
+                    return True
+            # Western name: 2-3 words, each starting with uppercase
+            parts = s.split()
+            if 2 <= len(parts) <= 3 and all(p and p[0].isupper() and p.isalpha() for p in parts):
+                return True
+            return False
+
+        if is_person_name(input_clean) and ai_name and input_clean.lower() != ai_name.lower():
+            input_chars = set(input_clean.replace(' ', '').lower())
+            ai_chars = set(ai_name.replace(' ', '').lower())
+            overlap = input_chars & ai_chars
+            if len(overlap) == 0:
+                logger.warning(f"AI replaced specific person '{input_clean}' with '{ai_name}'. Forcing input name.")
+                data["name"] = input_clean
+                if not data.get("title") or data["title"] == ai_name:
+                    data["title"] = "Public Figure"
+                if not data.get("stance"):
+                    data["stance"] = f"Has a unique perspective on {req.topic}."
+
         return data
     except httpx.HTTPStatusError as e:
         logger.error(f"HTTP error generating single participant: {e.response.status_code}")
@@ -616,7 +719,7 @@ async def generate_summary(req: GenerateSummaryRequest):
         f"- {req.userContext.nickname} (HOST): Identity = {req.userContext.identity}. The Host is also a participant whose views should be summarized."
     ])
 
-    prompt = f"""You are summarizing a high-quality intellectual roundtable discussion.
+    prompt = f"""You are producing the official minutes of a high-quality intellectual roundtable discussion. Your summary must be THOROUGH, DETAILED, and INSIGHTFUL — not a generic overview.
 
 Topic: {req.topic}
 
@@ -628,42 +731,44 @@ Language: {req.userContext.language}
 Transcript (full discussion):
 {transcript}
 
-Your task: Write a comprehensive summary in the user's language ({req.userContext.language}).
+Your task: Write a comprehensive, detailed summary in {req.userContext.language}.
 
 Return a JSON object with EXACTLY this structure:
 {{
   "topic": "The discussion topic (1 sentence)",
-  "summary": "A 3-5 sentence narrative summary of the entire discussion flow, highlighting key turning points and insights",
+  "summary": "A DETAILED 5-8 sentence narrative summary of the entire discussion. Capture the full arc: how the discussion started, the key arguments each participant made, how viewpoints evolved or clashed, major turning points, and where the discussion ended. Be SPECIFIC — reference actual arguments and quotes, not generic phrases.",
   "core_viewpoints": [
     {{
       "speaker": "EXACT name from the participant list above",
       "title": "their professional title",
-      "stance": "their position on the topic (one sentence)",
-      "key_points": ["specific point 1", "specific point 2", "specific point 3"],
-      "most_memorable_quote": "a direct quote from the discussion that captures their view"
+      "stance": "their detailed position on the topic (2-3 sentences capturing nuance)",
+      "key_points": ["specific point 1 with context", "specific point 2 with context", "specific point 3 with context", "specific point 4 with context"],
+      "most_memorable_quote": "a verbatim or near-verbatim quote from the transcript that best captures their view"
     }}
   ],
   "key_discussion_moments": [
-    "Description of a significant exchange or debate point that shaped the discussion"
+    "Detailed description of a pivotal exchange, clash, or breakthrough — include who said what and why it mattered"
   ],
   "questions": [
     {{
       "question": "A thought-provoking open question that emerged from the discussion",
-      "why_unresolved": "Why this question remains open or debated"
+      "why_unresolved": "Detailed explanation of why this question remains open, referencing specific points from the discussion"
     }}
   ],
-  "conclusion": "A 1-2 sentence conclusion synthesizing the overall discussion"
+  "conclusion": "A 2-4 sentence conclusion that synthesizes the overall discussion, identifies any emerging consensus or irreconcilable differences, and reflects on the broader implications"
 }}
 
 CRITICAL REQUIREMENTS:
-- "core_viewpoints" MUST have exactly {len(req.participants) + 1} entries (one per expert plus the Host "{req.userContext.nickname}"). The Host's viewpoint MUST be the LAST entry. Extract the Host's key points, memorable quotes, and stance from their messages in the transcript.
-- "key_discussion_moments" MUST have at least 2 entries.
-- "questions" MUST have at least 2 open questions.
-- "summary" must be substantive, not generic.
+- "core_viewpoints" MUST have exactly {len(req.participants) + 1} entries (one per expert plus the Host "{req.userContext.nickname}"). The Host's viewpoint MUST be the LAST entry.
+- **HOST VIEWPOINT**: The Host ("{req.userContext.nickname}") is an active participant, not just a moderator. Carefully review ALL of the Host's messages in the transcript. Extract the Host's personal opinions, arguments, questions, and positions on the topic. The Host's entry MUST include: their actual stance/position on the topic (not "Moderating"), at least 3-4 specific key points they raised, and a memorable quote from their messages. If the Host expressed clear opinions, reflect them accurately.
+- "key_discussion_moments" MUST have at least 3 detailed entries. Each should describe a specific pivotal moment with context about who said what and why it was significant.
+- "questions" MUST have at least 3 open questions with detailed "why_unresolved" explanations.
+- "summary" must be substantive and detailed, not generic. Reference specific arguments by name.
 - Use the EXACT participant names as provided in the participant list above.
+- Every "most_memorable_quote" must be an actual or closely paraphrased quote from the transcript, not a placeholder.
 """
     try:
-        text = await get_ai_response(prompt, json_mode=True, max_tokens=1024)
+        text = await get_ai_response(prompt, json_mode=True, max_tokens=8192)
 
         # Try to extract JSON from markdown code blocks if present
         json_text = text
@@ -725,7 +830,7 @@ CRITICAL REQUIREMENTS:
                 data["core_viewpoints"].append({
                     "speaker": host_name,
                     "title": f"Host ({req.userContext.identity})",
-                    "stance": "Moderating the discussion",
+                    "stance": "Participated actively in the discussion",
                     "key_points": [],
                     "most_memorable_quote": ""
                 })

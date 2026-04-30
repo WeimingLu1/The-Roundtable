@@ -21,7 +21,7 @@ export default function App() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [isLoadingTopic, setIsLoadingTopic] = useState(false);
-  const [updatingParticipantId, setUpdatingParticipantId] = useState<string | null>(null);
+  const [updatingParticipantIds, setUpdatingParticipantIds] = useState<string[]>([]);
 
   const [isWaitingForUser, setIsWaitingForUser] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -254,11 +254,10 @@ export default function App() {
   const handleSwapParticipant = async (id: string, inputQuery: string) => {
       if (!userContext) return;
       setSwappingParticipantId(null);
-      abortControllerRef.current?.abort();
-      abortControllerRef.current = new AbortController();
-      setUpdatingParticipantId(id);
+      const swapController = new AbortController();
+      setUpdatingParticipantIds(prev => [...prev, id]);
       try {
-          const details = await generateSingleParticipant(inputQuery, topic, userContext, abortControllerRef.current.signal);
+          const details = await generateSingleParticipant(inputQuery, topic, userContext, swapController.signal);
           setParticipants(prev => prev.map(p => {
               if (p.id === id) {
                   return {
@@ -274,7 +273,7 @@ export default function App() {
           console.error("Failed to swap participant", error);
           setParticipants(prev => prev.map(p => p.id === id ? { ...p, name: inputQuery, title: 'Guest', stance: 'Ready.' } : p));
       } finally {
-          setUpdatingParticipantId(null);
+          setUpdatingParticipantIds(prev => prev.filter(i => i !== id));
       }
   };
 
@@ -359,7 +358,7 @@ export default function App() {
       setIsTyping(false);
       setThinkingSpeakerId(null);
       setIsSummarizing(false);
-      setUpdatingParticipantId(null);
+      setUpdatingParticipantIds([]);
       stateRef.current.mentionedParticipantId = undefined;
       setSwappingParticipantId(null);
   };
@@ -500,7 +499,7 @@ export default function App() {
                         onUpdate={handleUpdateParticipantName}
                         onReplace={handleSwapParticipant}
                         onStartSwap={handleStartSwap}
-                        isUpdating={updatingParticipantId === p.id}
+                        isUpdating={updatingParticipantIds.includes(p.id)}
                         isSwapping={swappingParticipantId === p.id}
                     />
                 ))}
@@ -511,15 +510,15 @@ export default function App() {
             <div className="max-w-md mx-auto space-y-3">
                 <button
                     onClick={handleConfirmPanel}
-                    disabled={!!updatingParticipantId}
+                    disabled={updatingParticipantIds.length > 0}
                     className="w-full bg-md-accent text-black text-xl font-medium py-4 rounded-full shadow-lg flex items-center justify-center gap-2 hover:scale-[1.02] transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                   {updatingParticipantId ? <Loader2 className="animate-spin" size={20} /> : <Play size={20} fill="currentColor" />}
-                   {updatingParticipantId ? 'Preparing Guest...' : 'Start Roundtable'}
+                   {updatingParticipantIds.length > 0 ? <Loader2 className="animate-spin" size={20} /> : <Play size={20} fill="currentColor" />}
+                   {updatingParticipantIds.length > 0 ? 'Preparing Guest...' : 'Start Roundtable'}
                 </button>
                 <button
                     onClick={() => { if (topic.trim() && userContext) { setSwappingParticipantId(null); abortControllerRef.current?.abort(); abortControllerRef.current = new AbortController(); setAppState(AppState.GENERATING_PANEL); setError(null); generatePanel(topic, userContext, abortControllerRef.current.signal).then(panel => { setParticipants(panel); setAppState(AppState.PANEL_REVIEW); }).catch(e => { if (e.name !== 'AbortError') { console.error('Reshuffle failed:', e); setError('Failed to reshuffle panel. Please try again.'); setAppState(AppState.PANEL_REVIEW); } }); } }}
-                    disabled={!!updatingParticipantId}
+                    disabled={updatingParticipantIds.length > 0}
                     className="w-full text-md-secondary text-sm font-medium py-3 rounded-full hover:bg-white/5 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                     <RotateCcw size={16} /> Reshuffle All

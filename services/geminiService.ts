@@ -33,40 +33,28 @@ async function apiCall<T>(endpoint: string, body: any, timeoutMs: number = 30000
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-    let done = false;
-    const onExternalAbort = () => controller.abort();
-    const cleanup = () => {
-      if (!done) {
-        done = true;
-        clearTimeout(timeoutId);
-        if (options.signal) options.signal.removeEventListener('abort', onExternalAbort);
-      }
-    };
 
     try {
-      // Cascade external signal abort to the internal timeout controller.
-      // This avoids AbortSignal.any() which combines signals in a way that
-      // makes the fetch vulnerable to premature aborts from effect cleanups.
-      if (options.signal) {
-        if (options.signal.aborted) { controller.abort(); }
-        else { options.signal.addEventListener('abort', onExternalAbort, { once: true }); }
-      }
+      // Use external signal if provided, otherwise use the internal timeout controller.
+      // The external signal (from abortControllerRef) is a clean, fresh signal created
+      // per-operation by callers like handleStart. Effect cleanups no longer prematurely
+      // abort the controller since effects were split to only abort on unmount.
+      const signal = options.signal ?? controller.signal;
       const response = await fetch(`${API_BASE}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-        signal: controller.signal,
+        signal,
       });
-      cleanup();
+      clearTimeout(timeoutId);
       if (!response.ok) {
         throw new Error(`API error (${response.status}): ${response.statusText}`);
       }
       return response.json();
     } catch (e) {
-      cleanup();
+      clearTimeout(timeoutId);
       lastError = e instanceof Error ? e : new Error(String(e));
       if (attempt < retries) {
-        // If external signal already aborted, skip retry delay
         if (options.signal?.aborted) throw lastError;
         console.warn(`API call failed (attempt ${attempt + 1}/${maxAttempts}), retrying:`, lastError.message);
         await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
@@ -216,11 +204,30 @@ export const generateSummary = async (
   abortSignal?: AbortSignal
 ): Promise<Summary> => {
   try {
-    return await apiCall('/api/generate_summary', { topic, messageHistory, participants, userContext }, 60000, { signal: abortSignal });
+    return await apiCall('/api/generate_summary', { topic, messageHistory, participants, userContext }, 90000, { signal: abortSignal });
   } catch (e) {
     console.error('API call failed: generate_summary:', e);
     console.warn('Failed to generate summary, using fallback:', e);
     const participantNames = participants?.map(p => p.name).join(', ') || 'Panel participants';
+    const participantViewpoints = participants?.map(p => ({
+        speaker: p.name,
+        title: p.title,
+        stance: p.stance,
+        key_points: [],
+        most_memorable_quote: ""
+      })) || [];
+    // Include host viewpoint
+    if (userContext) {
+      const hostMessages = messageHistory?.filter(m => m.senderId === 'user') || [];
+      const hostKeyPoints = hostMessages.slice(0, 3).map(m => m.text.slice(0, 100) + (m.text.length > 100 ? '...' : ''));
+      participantViewpoints.push({
+        speaker: userContext.nickname,
+        title: `Host (${userContext.identity})`,
+        stance: 'Expressed views through questions and commentary',
+        key_points: hostKeyPoints,
+        most_memorable_quote: hostMessages.length > 0 ? hostMessages[hostMessages.length - 1].text.slice(0, 120) : ''
+      });
+    }
     const lastMessages = messageHistory?.slice(-3) || [];
     const summaryText = lastMessages.length > 0
       ? `Discussion covered key points about "${topic}" with contributions from ${participantNames}. Key themes emerged around the topic's implications and various perspectives were explored.`
@@ -228,13 +235,7 @@ export const generateSummary = async (
     return {
       topic: topic,
       summary: summaryText,
-      core_viewpoints: participants?.map(p => ({
-        speaker: p.name,
-        title: p.title,
-        stance: p.stance,
-        key_points: [],
-        most_memorable_quote: ""
-      })) || [],
+      core_viewpoints: participantViewpoints,
       key_discussion_moments: [],
       questions: [],
       conclusion: ""
