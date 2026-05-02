@@ -6,9 +6,13 @@
 
 ## Screenshots / 界面预览
 
-| Discussion / 讨论 | Panel / 嘉宾阵容 |
-|---|---|
-| ![Discussion](docs/screenshots/01-discussion.png) | ![Panel](docs/screenshots/02-panel-review.png) |
+**Panel / 嘉宾阵容**
+
+![Panel](docs/screenshots/02-panel-review.png)
+
+**Discussion / 讨论**
+
+![Discussion](docs/screenshots/01-discussion.png)
 
 ---
 
