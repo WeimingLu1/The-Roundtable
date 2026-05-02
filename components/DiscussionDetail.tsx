@@ -126,7 +126,6 @@ export function DiscussionDetail({ id, adminMode = false }: Props) {
 
   const handleStartContinue = () => {
     setIsContinuing(true);
-    setIsWaitingForUser(true);
     abortControllerRef.current = new AbortController();
   };
 
