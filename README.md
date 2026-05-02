@@ -4,6 +4,20 @@
 
 **圆桌** 是一个基于 MiniMax M2 AI 驱动的高品质智力讨论平台。它模拟了一个高端学术沙龙或跨学科辩论赛，允许用户作为主持人，与多位 AI 模拟的嘉宾进行深度思想碰撞。
 
+## Screenshots / 界面预览
+
+| Discussion / 讨论 | History / 历史记录 |
+|---|---|
+| ![Discussion](docs/screenshots/02-discussion-detail.png) | ![History](docs/screenshots/04-history.png) |
+
+| Landing / 首页 | Admin / 管理面板 |
+|---|---|
+| ![Landing](docs/screenshots/03-landing.png) | ![Admin](docs/screenshots/05-admin-users.png) |
+
+| Login / 登录 | Admin Discussions / 全部讨论 |
+|---|---|
+| ![Login](docs/screenshots/01-login.png) | ![Admin Discussions](docs/screenshots/06-admin-discussions.png) |
+
 ---
 
 ## Core Workflow / 核心流程
@@ -12,12 +26,17 @@ The project uses a state machine to manage the discussion lifecycle:
 
 本项目采用状态机模式管理讨论的生命周期：
 
-### 1. Onboarding / 用户入场
+### 1. Login / 登录
+Sign in with Google, GitHub, or email/password. First user becomes admin automatically.
+
+支持 Google、GitHub 或邮箱密码登录。首个注册用户自动成为管理员。
+
+### 2. Onboarding / 用户入场
 Collect the host's basic info (nickname, identity, language). The AI adapts its tone and depth accordingly.
 
 收集主持人的基本信息（昵称、身份背景、首选语言），AI 据此调整讨论的专业深度。
 
-### 2. Topic Selection / 确定议题
+### 3. Topic Selection / 确定议题
 Enter a custom topic or generate a random one. Random topics are drawn from **20 diverse domains** (politics, philosophy, ethics, economics, education, environment, culture, art, sports, etc.) — no repetitive AI themes.
 
 输入自定义话题或随机生成。随机话题从 **20 个领域**（政治、哲学、伦理、经济、教育、环境、文化、艺术、体育等）中随机抽取。
@@ -55,6 +74,16 @@ AI generates a detailed JSON report:
 - Synthesis conclusion
 
 AI 生成详细 JSON 报告：5-8 句叙事总结、每位嘉宾 + 主持人的核心观点、3+ 个关键转折时刻、3+ 个开放性问题及原因、综合结论。
+
+### 7. History / 讨论历史
+All discussions are automatically saved. Browse past discussions, view full transcripts, and continue any discussion from where it left off. Admin can access all users' discussions.
+
+所有讨论自动保存。浏览历史讨论、查看完整记录、随时继续讨论。管理员可访问所有用户的讨论。
+
+### 8. Admin Panel / 管理面板
+User management (CRUD), admin/superuser controls, and full visibility into all platform discussions. Admins can ghost into any user's discussion to continue on their behalf.
+
+用户管理（增删改查）、权限控制、全平台讨论可见。管理员可以 ghost 进入任意用户的讨论代为继续。
 
 ---
 
