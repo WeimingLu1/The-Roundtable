@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from backend.db import init_db, close_db
 from backend.routes_auth import router as auth_router, get_current_user
+from backend.routes_discussions import router as discussions_router, admin_router as discussions_admin_router
 from typing import List, Optional, Literal
 from dotenv import load_dotenv
 
@@ -62,6 +63,8 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(discussions_router)
+app.include_router(discussions_admin_router)
 
 async def get_http_client() -> httpx.AsyncClient:
     global _http_client
