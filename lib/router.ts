@@ -1,13 +1,24 @@
 import React from 'react';
 
-type RouteHandler = () => React.ReactNode;
+type RouteHandler = (params: Record<string, string>) => React.ReactNode;
+type RouteEntry = { pattern: string; regex: RegExp; paramNames: string[]; handler: RouteHandler };
 
-const routes: Map<string, RouteHandler> = new Map();
+const routes: RouteEntry[] = [];
 let currentPath: string = window.location.hash.slice(1) || '/';
 const listeners: Set<() => void> = new Set();
 
-export function addRoute(path: string, handler: RouteHandler) {
-  routes.set(path, handler);
+export function addRoute(pattern: string, handler: RouteHandler) {
+  const paramNames: string[] = [];
+  const regexStr = pattern.replace(/:([a-zA-Z0-9_]+)/g, (_, name) => {
+    paramNames.push(name);
+    return '([^/]+)';
+  });
+  routes.push({
+    pattern,
+    regex: new RegExp(`^${regexStr}$`),
+    paramNames,
+    handler
+  });
 }
 
 export function navigate(path: string) {
@@ -18,9 +29,18 @@ export function getCurrentPath(): string {
   return currentPath;
 }
 
-export function subscribe(fn: () => void): () => void {
-  listeners.add(fn);
-  return () => { listeners.delete(fn); };
+function matchRoute(path: string): { handler: RouteHandler; params: Record<string, string> } | null {
+  for (const entry of routes) {
+    const match = path.match(entry.regex);
+    if (match) {
+      const params: Record<string, string> = {};
+      entry.paramNames.forEach((name, i) => {
+        params[name] = match[i + 1];
+      });
+      return { handler: entry.handler, params };
+    }
+  }
+  return null;
 }
 
 window.addEventListener('hashchange', () => {
@@ -32,16 +52,23 @@ export function Router() {
   const [path, setPath] = React.useState(currentPath);
 
   React.useEffect(() => {
-    return subscribe(() => setPath(currentPath));
+    const unsub = subscribe(() => setPath(currentPath));
+    return unsub;
   }, []);
 
-  const handler = routes.get(path);
-  if (handler) return React.createElement(React.Fragment, null, handler());
+  const match = matchRoute(path);
+  if (match) {
+    return React.createElement(React.Fragment, null, match.handler(match.params));
+  }
 
-  // Default: redirect to /login
-  if (routes.has('/login')) {
+  if (routes.length > 0 && routes.some(r => r.pattern === '/login')) {
     navigate('/login');
     return null;
   }
   return null;
+}
+
+export function subscribe(fn: () => void): () => void {
+  listeners.add(fn);
+  return () => { listeners.delete(fn); };
 }
