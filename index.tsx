@@ -8,6 +8,8 @@ import { LoginPage } from './components/LoginPage';
 import { RegisterPage } from './components/RegisterPage';
 import { OnboardingForm } from './components/OnboardingForm';
 import { AdminPage } from './components/AdminPage';
+import { HistoryList } from './components/HistoryList';
+import { DiscussionDetail } from './components/DiscussionDetail';
 
 function AppShell() {
   return (
@@ -22,6 +24,8 @@ addRoute('/login', () => React.createElement(LoginPage));
 addRoute('/register', () => React.createElement(RegisterPage));
 addRoute('/onboarding', () => React.createElement(OnboardingForm));
 addRoute('/admin', () => React.createElement(AdminPage));
+addRoute('/history', () => React.createElement(HistoryList));
+addRoute('/discussion/:id', (params: Record<string, string>) => React.createElement(DiscussionDetail, { id: params.id }));
 addRoute('/', () => React.createElement(App));
 
 const rootElement = document.getElementById('root');

@@ -8,6 +8,7 @@ import { SummaryModal } from './components/SummaryModal';
 import { ArrowRight, RotateCcw, Loader2, Play, ChevronLeft, Shield } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import { navigate } from './lib/router';
+import { createDiscussion, appendMessages, updateDiscussion } from './services/discussionService';
 
 export default function App() {
   const { user, loading, logout } = useAuth();
@@ -54,13 +55,14 @@ export default function App() {
   const [currentRoundLimit, setCurrentRoundLimit] = useState(5);
   const [openingSpeakerIndex, setOpeningSpeakerIndex] = useState(0);
   const [openingSpeakerOrder, setOpeningSpeakerOrder] = useState<string[]>([]);
+  const [discussionId, setDiscussionId] = useState<string | null>(null);
 
   // Refs for async operations
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const turnInProgressRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   // Keep latest state snapshot for async callbacks to avoid stale closures
-  const stateRef = useRef({ appState, topic, participants, messages, userContext, autoDebateCount, currentRoundLimit, openingSpeakerIndex, openingSpeakerOrder: [] as string[], isWaitingForUser, isSummarizing, mentionedParticipantId: undefined as string | undefined });
+  const stateRef = useRef({ appState, topic, participants, messages, userContext, autoDebateCount, currentRoundLimit, openingSpeakerIndex, openingSpeakerOrder: [] as string[], isWaitingForUser, isSummarizing, mentionedParticipantId: undefined as string | undefined, discussionId: null as string | null });
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -74,7 +76,7 @@ export default function App() {
   // Sync stateRef on every render so async callbacks always read fresh state.
   // This MUST run before any other effect that reads stateRef.
   useEffect(() => {
-    stateRef.current = { appState, topic, participants, messages, userContext, autoDebateCount, currentRoundLimit, openingSpeakerIndex, openingSpeakerOrder, isWaitingForUser, isSummarizing, mentionedParticipantId: stateRef.current.mentionedParticipantId };
+    stateRef.current = { appState, topic, participants, messages, userContext, autoDebateCount, currentRoundLimit, openingSpeakerIndex, openingSpeakerOrder, isWaitingForUser, isSummarizing, mentionedParticipantId: stateRef.current.mentionedParticipantId, discussionId };
   });
 
   // Create AbortController on entry to discussion phases.
@@ -222,6 +224,11 @@ export default function App() {
 
         setMessages(prev => [...prev, newMessage]);
 
+        // Save new message to backend (use stateRef for latest discussionId)
+        if (stateRef.current.discussionId) {
+          appendMessages(stateRef.current.discussionId, [newMessage]).catch(e => console.error('Save message error:', e));
+        }
+
         if (result.shouldWaitForUser) {
           setIsWaitingForUser(true);
           setAutoDebateCount(0);
@@ -295,13 +302,23 @@ export default function App() {
       setSwappingParticipantId(id);
   };
 
-  const handleConfirmPanel = () => {
+  const handleConfirmPanel = async () => {
     setAppState(AppState.OPENING_STATEMENTS);
     setOpeningSpeakerIndex(0);
     setMessages([]);
     // Shuffle opening speaker order for variety
     const shuffled = [...participants.map(p => p.id)].sort(() => Math.random() - 0.5);
     setOpeningSpeakerOrder(shuffled);
+
+    // Create discussion in backend
+    if (user) {
+      try {
+        const disc = await createDiscussion(topic, participants);
+        setDiscussionId(disc.id);
+      } catch (e) {
+        console.error('Failed to create discussion record:', e);
+      }
+    }
   };
 
   const handleUserMessage = (text: string) => {
@@ -342,6 +359,9 @@ export default function App() {
       try {
         const s = await generateSummary(topic, messages, participants, abortControllerRef.current.signal);
         setSummary(s);
+        if (stateRef.current.discussionId) {
+          updateDiscussion(stateRef.current.discussionId, { summary: s }).catch(e => console.error('Save summary error:', e));
+        }
       } catch (e: any) {
         if (e.name !== 'AbortError') {
           console.error("Failed to generate summary:", e);
@@ -465,6 +485,13 @@ export default function App() {
                 className="mt-8 w-full bg-md-accent text-black font-medium py-4 text-lg rounded-full shadow-elevation-2 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
             >
                 Summon Guests <ArrowRight size={20} />
+            </button>
+
+            <button
+              onClick={() => navigate('/history')}
+              className="w-full text-md-secondary text-sm font-medium py-3 rounded-full hover:bg-white/5 transition-colors flex items-center justify-center gap-2 mt-3"
+            >
+              View Past Discussions →
             </button>
             </div>
         </div>
