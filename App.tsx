@@ -1,16 +1,32 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Participant, Message, AppState, Summary, UserContext } from './types';
+import { Participant, Message, AppState, Summary } from './types';
 import { generatePanel, predictNextSpeaker, generateTurnForSpeaker, generateSummary, generateRandomTopic, generateSingleParticipant } from './services/geminiService';
 import { ParticipantCard } from './components/ParticipantCard';
 import { ChatBubble } from './components/ChatBubble';
 import { InputArea } from './components/InputArea';
 import { SummaryModal } from './components/SummaryModal';
-import { OnboardingForm } from './components/OnboardingForm';
-import { ArrowRight, RotateCcw, Loader2, Play, ChevronLeft } from 'lucide-react';
+import { ArrowRight, RotateCcw, Loader2, Play, ChevronLeft, Shield } from 'lucide-react';
+import { useAuth } from './contexts/AuthContext';
+import { navigate } from './lib/router';
 
 export default function App() {
-  const [appState, setAppState] = useState<AppState>(AppState.ONBOARDING);
-  const [userContext, setUserContext] = useState<UserContext | null>(null);
+  const { user, loading, logout } = useAuth();
+
+  // Auth gate: redirect if not authenticated
+  useEffect(() => {
+    if (!loading && !user) {
+      navigate('/login');
+    }
+  }, [loading, user]);
+
+  // Redirect to onboarding if profile incomplete
+  useEffect(() => {
+    if (user && !user.identity) {
+      navigate('/onboarding');
+    }
+  }, [user]);
+
+  const [appState, setAppState] = useState<AppState>(AppState.LANDING);
   const [topic, setTopic] = useState('');
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -29,6 +45,9 @@ export default function App() {
   const [mentionedParticipantIdVersion, setMentionedParticipantIdVersion] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const consecutiveFallbackRef = useRef(0);
+
+  // Derived from auth user (NOT state)
+  const userContext = user ? { nickname: user.name, identity: user.identity, language: user.language } : null;
 
   // Logic Control
   const [autoDebateCount, setAutoDebateCount] = useState(0);
@@ -226,13 +245,8 @@ export default function App() {
 
   // --- HANDLERS ---
 
-  const handleOnboardingComplete = (context: UserContext) => {
-    setUserContext(context);
-    setAppState(AppState.LANDING);
-  };
-
   const handleStart = async () => {
-    if (!topic.trim() || !userContext) return;
+    if (!topic.trim() || !user) return;
     abortControllerRef.current?.abort();
     abortControllerRef.current = new AbortController();
     setAppState(AppState.GENERATING_PANEL);
@@ -252,7 +266,7 @@ export default function App() {
   };
 
   const handleSwapParticipant = async (id: string, inputQuery: string) => {
-      if (!userContext) return;
+      if (!user) return;
       setSwappingParticipantId(null);
       const swapController = new AbortController();
       setUpdatingParticipantIds(prev => [...prev, id]);
@@ -321,7 +335,7 @@ export default function App() {
   };
 
   const handleSummarize = async () => {
-      if (!userContext) return;
+      if (!user) return;
       abortControllerRef.current?.abort();
       abortControllerRef.current = new AbortController();
       setIsSummarizing(true);
@@ -368,7 +382,7 @@ export default function App() {
   };
 
   const handleRandomTopic = async () => {
-      if (!userContext || isLoadingTopic) return;
+      if (!user || isLoadingTopic) return;
       abortControllerRef.current?.abort();
       abortControllerRef.current = new AbortController();
       setIsLoadingTopic(true);
@@ -384,23 +398,29 @@ export default function App() {
 
   // --- VIEWS ---
 
-  if (appState === AppState.ONBOARDING) {
-    return <OnboardingForm onComplete={handleOnboardingComplete} />;
-  }
-
   if (appState === AppState.LANDING) {
     return (
       <div className="min-h-screen bg-md-surface flex flex-col items-center p-6 text-center animate-fade-in relative">
         {/* Fixed Back Button */}
         <div className="fixed top-6 left-6 z-50">
              <button
-                onClick={() => setAppState(AppState.ONBOARDING)}
+                onClick={logout}
                 className="p-2 rounded-full bg-md-surface-container hover:bg-white/10 transition-colors border border-white/5 text-md-primary shadow-sm backdrop-blur-md"
                 title="Back to Setup"
             >
                 <ChevronLeft size={24} />
             </button>
          </div>
+
+        {user?.is_admin && (
+          <button
+            onClick={() => navigate('/admin')}
+            className="fixed top-6 right-6 z-50 p-2 rounded-full bg-md-surface-container hover:bg-white/10 transition-colors border border-white/5 text-md-primary shadow-sm backdrop-blur-md"
+            title="Admin Panel"
+          >
+            <Shield size={24} />
+          </button>
+        )}
 
         <div className="flex-1 flex flex-col items-center justify-center w-full max-w-lg mt-12">
             <h1 className="font-sans text-5xl md:text-6xl font-bold text-md-primary mb-4 tracking-tight">The Roundtable</h1>
@@ -410,11 +430,11 @@ export default function App() {
                 <div className="mb-8 flex items-center justify-between bg-md-surface-container px-6 py-4 rounded-2xl shadow-sm border border-white/5">
                     <div className="text-left">
                         <p className="text-xs font-bold text-md-outline uppercase tracking-wider">Host</p>
-                        <p className="text-lg font-bold text-md-primary">{userContext?.nickname}</p>
+                        <p className="text-lg font-bold text-md-primary">{user?.name}</p>
                     </div>
                     <div className="text-right">
                         <p className="text-xs font-bold text-md-outline uppercase tracking-wider">Lang</p>
-                        <p className="text-sm text-md-secondary">{userContext?.language}</p>
+                        <p className="text-sm text-md-secondary">{user?.language}</p>
                     </div>
                 </div>
 
@@ -427,7 +447,7 @@ export default function App() {
                     onChange={(e) => setTopic(e.target.value)}
                     className="w-full bg-md-surface-container border-none rounded-2xl p-6 text-xl shadow-elevation-1 focus:ring-2 focus:ring-md-accent/50 outline-none transition-all resize-none text-md-primary placeholder-gray-500"
                     rows={3}
-                    placeholder={userContext?.language === 'Chinese' ? "例如：人工智能是否拥有意识？" : "e.g. Is universal basic income necessary?"}
+                    placeholder={user?.language === 'Chinese' ? "例如：人工智能是否拥有意识？" : "e.g. Is universal basic income necessary?"}
                 />
                 <button
                     onClick={handleRandomTopic}
@@ -517,7 +537,7 @@ export default function App() {
                    {updatingParticipantIds.length > 0 ? 'Preparing Guest...' : 'Start Roundtable'}
                 </button>
                 <button
-                    onClick={() => { if (topic.trim() && userContext) { setSwappingParticipantId(null); abortControllerRef.current?.abort(); abortControllerRef.current = new AbortController(); setAppState(AppState.GENERATING_PANEL); setError(null); generatePanel(topic, abortControllerRef.current.signal).then(panel => { setParticipants(panel); setAppState(AppState.PANEL_REVIEW); }).catch(e => { if (e.name !== 'AbortError') { console.error('Reshuffle failed:', e); setError('Failed to reshuffle panel. Please try again.'); setAppState(AppState.PANEL_REVIEW); } }); } }}
+                    onClick={() => { if (topic.trim() && user) { setSwappingParticipantId(null); abortControllerRef.current?.abort(); abortControllerRef.current = new AbortController(); setAppState(AppState.GENERATING_PANEL); setError(null); generatePanel(topic, abortControllerRef.current.signal).then(panel => { setParticipants(panel); setAppState(AppState.PANEL_REVIEW); }).catch(e => { if (e.name !== 'AbortError') { console.error('Reshuffle failed:', e); setError('Failed to reshuffle panel. Please try again.'); setAppState(AppState.PANEL_REVIEW); } }); } }}
                     disabled={updatingParticipantIds.length > 0}
                     className="w-full text-md-secondary text-sm font-medium py-3 rounded-full hover:bg-white/5 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
                 >
@@ -570,7 +590,7 @@ export default function App() {
                     message={msg}
                     sender={participants.find(p => p.id === msg.senderId)}
                     participants={participants}
-                    hostName={userContext?.nickname}
+                    hostName={user?.name}
                 />
             ))}
 
