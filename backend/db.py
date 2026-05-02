@@ -14,7 +14,8 @@ async def get_connection() -> aiosqlite.Connection:
     if _connection is None:
         async with _lock:
             if _connection is None:
-                os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+                if DB_PATH != ":memory:":
+                    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
                 _connection = await aiosqlite.connect(DB_PATH)
                 _connection.row_factory = aiosqlite.Row
                 await _connection.execute("PRAGMA journal_mode=WAL")
@@ -130,8 +131,12 @@ async def list_users(search: str = "") -> list[dict]:
 async def delete_user(user_id: str) -> bool:
     """Soft delete — sets is_active = 0"""
     db = await get_connection()
-    result = await update_user(user_id, is_active=0)
-    return result is not None
+    cursor = await db.execute(
+        "UPDATE users SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (user_id,)
+    )
+    await db.commit()
+    return cursor.rowcount > 0
 
 
 async def count_users() -> int:
