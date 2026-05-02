@@ -113,7 +113,38 @@ Backend increments `message_count` by len(messages) and updates `updated_at`.
 
 ### Discussion Ownership
 
-All discussion endpoints filter by `user_id = current_user.id`. Users can only access their own discussions. Admins cannot view other users' discussions (keeps it simple).
+Regular users can only access their own discussions (`user_id = current_user.id`).
+
+**Admin superuser**: Admins (`is_admin = true`) can access ALL users' discussions. When admin accesses a discussion, the `user_id` filter is skipped. Additionally, admin can impersonate the discussion owner to continue the discussion on their behalf.
+
+### Admin Discussion Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/admin/discussions` | List ALL discussions across all users (with owner name) |
+| `GET` | `/api/admin/discussions/{id}` | Get any discussion with all messages |
+| `POST` | `/api/admin/discussions/{id}/messages` | Append messages as the discussion owner (impersonation) |
+| `PUT` | `/api/admin/discussions/{id}` | Update any discussion |
+| `DELETE` | `/api/admin/discussions/{id}` | Archive any discussion |
+
+Admin discussion list includes the owner's name and email for identification:
+```json
+{
+  "discussions": [{
+    "id": "uuid",
+    "user_name": "张三",
+    "user_email": "zhang@example.com",
+    "topic": "AI是否拥有意识？",
+    "participants": [...],
+    "message_count": 24,
+    "status": "active",
+    "created_at": "...",
+    "updated_at": "..."
+  }]
+}
+```
+
+When admin posts messages via the admin endpoint, the `sender_id = 'user'` messages are stored under the original discussion owner's identity, but the backend records `sender_id = 'user'` as usual — the impersonation is transparent (admin is effectively acting as the host of that discussion).
 
 ## Backend Implementation
 
@@ -159,6 +190,7 @@ Add `CREATE TABLE IF NOT EXISTS` for discussions and messages in `init_db()`. No
 | `index.tsx` | Register `/history` and `/discussion/:id` routes |
 | `backend/db.py` | Add discussion + message CRUD functions |
 | `backend/main.py` | Mount discussions router, add tables to init_db |
+| `components/AdminPage.tsx` | **Modify** — add "All Discussions" tab showing every user's discussions |
 
 ### HistoryList Page
 
@@ -209,6 +241,29 @@ Add a "History" button below the "Summon Guests" button:
 </button>
 ```
 
+### Admin All-Discussions View
+
+AdminPage gets a second tab "All Discussions" next to "Users". Shows a table/card list of ALL discussions across all users:
+
+```
+┌──────────────────────────────────────────────────┐
+│  Admin Panel                                     │
+│  [Users]  [All Discussions]                      │
+│                                                  │
+│  ┌──────────────────────────────────────────┐    │
+│  │ 张三 · AI是否拥有意识？                    │    │
+│  │ 姚明, Elon Musk, 迪丽热巴                │    │
+│  │ 24 msgs · 2 days ago · active      [→]   │    │
+│  ├──────────────────────────────────────────┤    │
+│  │ 李四 · 全民基本收入可行吗？               │    │
+│  │ Taylor Swift, Gordon Ramsay, 李开复     │    │
+│  │ 18 msgs · 5 days ago · archived   [→]   │    │
+│  └──────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────┘
+```
+
+Each card shows: owner name, topic, participants, message count, status badge, time. Click → `/discussion/:id` with admin context. When admin continues a discussion, messages are posted via the admin endpoint, impersonating the original user as host.
+
 ## Discussion Continue Flow
 
 1. User clicks a discussion in HistoryList
@@ -220,9 +275,11 @@ Add a "History" button below the "Summon Guests" button:
 
 ## Security
 
-- All discussion endpoints validate `user_id` from JWT — users can only access their own discussions
+- All `/api/discussions/*` endpoints filter by `user_id` from JWT — users can only access their own discussions
+- All `/api/admin/discussions/*` endpoints require `require_admin` dependency
 - Input validation: topic max 500 chars, participants array 1-10 items
 - Messages batch size limited to 50 per request
+- Admin impersonation is transparent — the original discussion owner's identity is preserved
 
 ## Testing Strategy
 
