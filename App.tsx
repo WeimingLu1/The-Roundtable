@@ -117,7 +117,6 @@ export default function App() {
       currentTopic,
       currentParticipants,
       currentMessages,
-      currentUserContext,
       0, 0, true,
       undefined,
       abortControllerRef.current!.signal
@@ -174,7 +173,7 @@ export default function App() {
     setIsTyping(true);
     turnInProgressRef.current = true;
 
-    predictNextSpeaker(currentTopic, currentParticipants, currentMessages, currentUserContext, currentAutoDebateCount, abortControllerRef.current!.signal)
+    predictNextSpeaker(currentTopic, currentParticipants, currentMessages, currentAutoDebateCount, abortControllerRef.current!.signal)
       .then(async nextSpeakerId => {
         setThinkingSpeakerId(nextSpeakerId);
         const result = await generateTurnForSpeaker(
@@ -182,7 +181,6 @@ export default function App() {
           currentTopic,
           currentParticipants,
           currentMessages,
-          currentUserContext,
           currentAutoDebateCount,
           currentRoundLimitVal,
           false,
@@ -239,7 +237,7 @@ export default function App() {
     abortControllerRef.current = new AbortController();
     setAppState(AppState.GENERATING_PANEL);
     try {
-      const panel = await generatePanel(topic, userContext, abortControllerRef.current.signal);
+      const panel = await generatePanel(topic, abortControllerRef.current.signal);
       setParticipants(panel);
       setAppState(AppState.PANEL_REVIEW);
     } catch (e) {
@@ -259,7 +257,7 @@ export default function App() {
       const swapController = new AbortController();
       setUpdatingParticipantIds(prev => [...prev, id]);
       try {
-          const details = await generateSingleParticipant(inputQuery, topic, userContext, swapController.signal);
+          const details = await generateSingleParticipant(inputQuery, topic, swapController.signal);
           setParticipants(prev => prev.map(p => {
               if (p.id === id) {
                   return {
@@ -328,7 +326,7 @@ export default function App() {
       abortControllerRef.current = new AbortController();
       setIsSummarizing(true);
       try {
-        const s = await generateSummary(topic, messages, participants, userContext, abortControllerRef.current.signal);
+        const s = await generateSummary(topic, messages, participants, abortControllerRef.current.signal);
         setSummary(s);
       } catch (e: any) {
         if (e.name !== 'AbortError') {
@@ -375,7 +373,7 @@ export default function App() {
       abortControllerRef.current = new AbortController();
       setIsLoadingTopic(true);
       try {
-          const newTopic = await generateRandomTopic(userContext.language, abortControllerRef.current.signal);
+          const newTopic = await generateRandomTopic(abortControllerRef.current.signal);
           setTopic(newTopic);
       } catch (e) {
           console.error("Failed to generate random topic:", e);
@@ -519,7 +517,7 @@ export default function App() {
                    {updatingParticipantIds.length > 0 ? 'Preparing Guest...' : 'Start Roundtable'}
                 </button>
                 <button
-                    onClick={() => { if (topic.trim() && userContext) { setSwappingParticipantId(null); abortControllerRef.current?.abort(); abortControllerRef.current = new AbortController(); setAppState(AppState.GENERATING_PANEL); setError(null); generatePanel(topic, userContext, abortControllerRef.current.signal).then(panel => { setParticipants(panel); setAppState(AppState.PANEL_REVIEW); }).catch(e => { if (e.name !== 'AbortError') { console.error('Reshuffle failed:', e); setError('Failed to reshuffle panel. Please try again.'); setAppState(AppState.PANEL_REVIEW); } }); } }}
+                    onClick={() => { if (topic.trim() && userContext) { setSwappingParticipantId(null); abortControllerRef.current?.abort(); abortControllerRef.current = new AbortController(); setAppState(AppState.GENERATING_PANEL); setError(null); generatePanel(topic, abortControllerRef.current.signal).then(panel => { setParticipants(panel); setAppState(AppState.PANEL_REVIEW); }).catch(e => { if (e.name !== 'AbortError') { console.error('Reshuffle failed:', e); setError('Failed to reshuffle panel. Please try again.'); setAppState(AppState.PANEL_REVIEW); } }); } }}
                     disabled={updatingParticipantIds.length > 0}
                     className="w-full text-md-secondary text-sm font-medium py-3 rounded-full hover:bg-white/5 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
                 >
