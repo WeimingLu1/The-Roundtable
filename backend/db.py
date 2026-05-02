@@ -1,21 +1,24 @@
 import os
+import asyncio
 import uuid
 import aiosqlite
-from contextlib import asynccontextmanager
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "data", "roundtable.db")
 
 _connection: aiosqlite.Connection | None = None
+_lock = asyncio.Lock()
 
 
 async def get_connection() -> aiosqlite.Connection:
     global _connection
     if _connection is None:
-        os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-        _connection = await aiosqlite.connect(DB_PATH)
-        _connection.row_factory = aiosqlite.Row
-        await _connection.execute("PRAGMA journal_mode=WAL")
-        await _connection.execute("PRAGMA foreign_keys=ON")
+        async with _lock:
+            if _connection is None:
+                os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+                _connection = await aiosqlite.connect(DB_PATH)
+                _connection.row_factory = aiosqlite.Row
+                await _connection.execute("PRAGMA journal_mode=WAL")
+                await _connection.execute("PRAGMA foreign_keys=ON")
     return _connection
 
 
@@ -87,16 +90,11 @@ async def create_user(
     db = await get_connection()
     user_id = str(uuid.uuid4())
 
-    # First user is automatically admin
-    async with db.execute("SELECT COUNT(*) as count FROM users") as cursor:
-        row = await cursor.fetchone()
-        is_first = row["count"] == 0
-
     await db.execute(
         """INSERT INTO users (id, email, password_hash, name, avatar_url, auth_provider, provider_id, is_admin, language)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           SELECT ?, ?, ?, ?, ?, ?, ?, CASE WHEN (SELECT COUNT(*) FROM users) = 0 THEN 1 ELSE 0 END, ?""",
         (user_id, email.lower() if email else None, password_hash, name, avatar_url,
-         auth_provider, provider_id, 1 if is_first else 0, language)
+         auth_provider, provider_id, language)
     )
     await db.commit()
     return await get_user_by_id(user_id)
