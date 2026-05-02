@@ -51,7 +51,7 @@ export function DiscussionDetail({ id, adminMode = false }: Props) {
 
   // Discussion loop when continuing
   useEffect(() => {
-    if (!isContinuing || isTyping || thinkingSpeakerId || turnInProgressRef.current) return;
+    if (!isContinuing || isTyping || thinkingSpeakerId || turnInProgressRef.current || isWaitingForUser) return;
     if (!participants.length || !discussion) return;
 
     const runTurn = async () => {
@@ -104,7 +104,7 @@ export function DiscussionDetail({ id, adminMode = false }: Props) {
     };
 
     runTurn();
-  }, [isContinuing, isTyping, thinkingSpeakerId, autoDebateCount, messages.length]);
+  }, [isContinuing, isTyping, thinkingSpeakerId, autoDebateCount, messages.length, isWaitingForUser]);
 
   const handleUserMessage = (text: string) => {
     const userMsg: Message = {
