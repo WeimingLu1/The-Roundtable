@@ -31,10 +31,13 @@ export function DiscussionDetail({ id, adminMode = false }: Props) {
   const turnInProgressRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  // Auto-detect admin mode: admins use admin APIs to bypass ownership checks
+  const effectiveAdminMode = adminMode || (user?.is_admin === true);
+
   // Load discussion
   useEffect(() => {
     if (!user) return;
-    const fetcher = adminMode ? adminGetDiscussion : getDiscussion;
+    const fetcher = effectiveAdminMode ? adminGetDiscussion : getDiscussion;
     fetcher(id)
       .then(d => {
         setDiscussion(d);
@@ -44,7 +47,7 @@ export function DiscussionDetail({ id, adminMode = false }: Props) {
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
-  }, [id, user, adminMode]);
+  }, [id, user, effectiveAdminMode]);
 
   // Discussion loop when continuing
   useEffect(() => {
@@ -81,7 +84,7 @@ export function DiscussionDetail({ id, adminMode = false }: Props) {
         setMessages(prev => [...prev, newMessage]);
 
         // Save to backend
-        const saver = adminMode ? adminAppendMessages : saveMessages;
+        const saver = effectiveAdminMode ? adminAppendMessages : saveMessages;
         saver(id, [newMessage]).catch(console.error);
 
         if (result.shouldWaitForUser) {
@@ -113,7 +116,7 @@ export function DiscussionDetail({ id, adminMode = false }: Props) {
     setMessages(prev => [...prev, userMsg]);
 
     // Save user message
-    const saver = adminMode ? adminAppendMessages : saveMessages;
+    const saver = effectiveAdminMode ? adminAppendMessages : saveMessages;
     saver(id, [userMsg]).catch(console.error);
 
     setIsWaitingForUser(false);
@@ -146,12 +149,12 @@ export function DiscussionDetail({ id, adminMode = false }: Props) {
 
   if (!discussion) return null;
 
-  const hostName = adminMode ? (discussion as any).user_name : user?.name;
+  const hostName = effectiveAdminMode ? (discussion as any).user_name : user?.name;
 
   return (
     <div className="relative min-h-screen bg-md-surface">
       <header className="fixed top-0 left-0 right-0 h-16 bg-md-surface/80 backdrop-blur-md px-4 py-3 flex items-center justify-between shadow-sm z-50 border-b border-white/5">
-        <button onClick={() => adminMode ? navigate('/admin') : navigate('/history')} className="p-2 rounded-full hover:bg-white/10 text-md-primary">
+        <button onClick={() => effectiveAdminMode ? navigate('/admin') : navigate('/history')} className="p-2 rounded-full hover:bg-white/10 text-md-primary">
           <ArrowLeft size={24} />
         </button>
         <div className="text-center">
