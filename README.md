@@ -6,17 +6,9 @@
 
 ## Screenshots / 界面预览
 
-| Discussion / 讨论 | History / 历史记录 |
+| Discussion / 讨论 | Panel / 嘉宾阵容 |
 |---|---|
-| ![Discussion](docs/screenshots/02-discussion-detail.png) | ![History](docs/screenshots/04-history.png) |
-
-| Landing / 首页 | Admin / 管理面板 |
-|---|---|
-| ![Landing](docs/screenshots/03-landing.png) | ![Admin](docs/screenshots/05-admin-users.png) |
-
-| Login / 登录 | Admin Discussions / 全部讨论 |
-|---|---|
-| ![Login](docs/screenshots/01-login.png) | ![Admin Discussions](docs/screenshots/06-admin-discussions.png) |
+| ![Discussion](docs/screenshots/01-discussion.png) | ![Panel](docs/screenshots/02-panel-review.png) |
 
 ---
 
