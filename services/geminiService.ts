@@ -1,4 +1,4 @@
-import { Participant, Message, RoleType, UserContext, Summary } from '../types';
+import { Participant, Message, RoleType, Summary } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
@@ -40,9 +40,12 @@ async function apiCall<T>(endpoint: string, body: any, timeoutMs: number = 30000
       // per-operation by callers like handleStart. Effect cleanups no longer prematurely
       // abort the controller since effects were split to only abort on unmount.
       const signal = options.signal ?? controller.signal;
+      const token = localStorage.getItem('roundtable_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const response = await fetch(`${API_BASE}${endpoint}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(body),
         signal,
       });
@@ -66,9 +69,9 @@ async function apiCall<T>(endpoint: string, body: any, timeoutMs: number = 30000
   throw lastError || new Error('API call failed');
 }
 
-export const generateRandomTopic = async (language: string, abortSignal?: AbortSignal): Promise<string> => {
+export const generateRandomTopic = async (abortSignal?: AbortSignal): Promise<string> => {
   try {
-    const res = await apiCall<{ topic: string }>('/api/generate_random_topic', { language }, 30000, { signal: abortSignal });
+    const res = await apiCall<{ topic: string }>('/api/generate_random_topic', {}, 30000, { signal: abortSignal });
     return res.topic || '';
   } catch (e) {
     console.error('API call failed: generate_random_topic:', e);
@@ -77,9 +80,9 @@ export const generateRandomTopic = async (language: string, abortSignal?: AbortS
   }
 };
 
-export const generatePanel = async (topic: string, userContext: UserContext, abortSignal?: AbortSignal): Promise<Participant[]> => {
+export const generatePanel = async (topic: string, abortSignal?: AbortSignal): Promise<Participant[]> => {
   try {
-    const res = await apiCall<{ participants: ParticipantResponse[] }>('/api/generate_panel', { topic, userContext }, 30000, { signal: abortSignal });
+    const res = await apiCall<{ participants: ParticipantResponse[] }>('/api/generate_panel', { topic }, 30000, { signal: abortSignal });
     if (!res?.participants || !Array.isArray(res.participants) || res.participants.length < 3) {
       console.warn('Invalid panel response (missing or too few participants), using fallback');
       return getFallbackParticipants();
@@ -110,13 +113,12 @@ function getFallbackParticipants(): Participant[] {
 export const generateSingleParticipant = async (
   inputQuery: string,
   topic: string,
-  userContext: UserContext,
   abortSignal?: AbortSignal
 ): Promise<{ name: string; title: string; stance: string }> => {
   try {
     return await apiCall<{ name: string; title: string; stance: string }>(
       '/api/generate_single_participant',
-      { inputQuery, topic, userContext },
+      { inputQuery, topic },
       60000,
       { signal: abortSignal }
     );
@@ -135,17 +137,19 @@ export const predictNextSpeaker = async (
   topic: string,
   participants: Participant[],
   messageHistory: Message[],
-  userContext: UserContext,
   turnCount: number,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  languageOverride?: string,
+  hostNameOverride?: string,
 ): Promise<string> => {
   try {
     const res = await apiCall<{ speakerId: string }>('/api/predict_next_speaker', {
       topic,
       participants,
       messageHistory,
-      userContext,
       turnCount,
+      language_override: languageOverride,
+      host_name_override: hostNameOverride,
     }, 30000, { signal: abortSignal });
     return res.speakerId;
   } catch (e) {
@@ -163,12 +167,13 @@ export const generateTurnForSpeaker = async (
   topic: string,
   participants: Participant[],
   messageHistory: Message[],
-  userContext: UserContext,
   turnCount: number,
   maxTurns: number,
   isOpeningStatement: boolean = false,
   mentionedParticipantId?: string,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  languageOverride?: string,
+  hostNameOverride?: string,
 ): Promise<{ text: string; stance?: string; stanceIntensity?: number; shouldWaitForUser: boolean; actionDescription?: string }> => {
   try {
     return await apiCall('/api/generate_turn', {
@@ -176,11 +181,12 @@ export const generateTurnForSpeaker = async (
       topic,
       participants,
       messageHistory,
-      userContext,
       turnCount,
       maxTurns,
       isOpeningStatement,
       mentionedParticipantId,
+      language_override: languageOverride,
+      host_name_override: hostNameOverride,
     }, 45000, { signal: abortSignal });
   } catch (e) {
     console.error('API call failed: generate_turn:', e);
@@ -200,11 +206,10 @@ export const generateSummary = async (
   topic: string,
   messageHistory: Message[],
   participants: Participant[],
-  userContext: UserContext,
   abortSignal?: AbortSignal
 ): Promise<Summary> => {
   try {
-    return await apiCall('/api/generate_summary', { topic, messageHistory, participants, userContext }, 90000, { signal: abortSignal });
+    return await apiCall('/api/generate_summary', { topic, messageHistory, participants }, 90000, { signal: abortSignal });
   } catch (e) {
     console.error('API call failed: generate_summary:', e);
     console.warn('Failed to generate summary, using fallback:', e);
@@ -216,18 +221,6 @@ export const generateSummary = async (
         key_points: [],
         most_memorable_quote: ""
       })) || [];
-    // Include host viewpoint
-    if (userContext) {
-      const hostMessages = messageHistory?.filter(m => m.senderId === 'user') || [];
-      const hostKeyPoints = hostMessages.slice(0, 3).map(m => m.text.slice(0, 100) + (m.text.length > 100 ? '...' : ''));
-      participantViewpoints.push({
-        speaker: userContext.nickname,
-        title: `Host (${userContext.identity})`,
-        stance: 'Expressed views through questions and commentary',
-        key_points: hostKeyPoints,
-        most_memorable_quote: hostMessages.length > 0 ? hostMessages[hostMessages.length - 1].text.slice(0, 120) : ''
-      });
-    }
     const lastMessages = messageHistory?.slice(-3) || [];
     const summaryText = lastMessages.length > 0
       ? `Discussion covered key points about "${topic}" with contributions from ${participantNames}. Key themes emerged around the topic's implications and various perspectives were explored.`
