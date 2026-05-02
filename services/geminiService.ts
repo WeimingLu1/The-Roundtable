@@ -138,7 +138,9 @@ export const predictNextSpeaker = async (
   participants: Participant[],
   messageHistory: Message[],
   turnCount: number,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  languageOverride?: string,
+  hostNameOverride?: string,
 ): Promise<string> => {
   try {
     const res = await apiCall<{ speakerId: string }>('/api/predict_next_speaker', {
@@ -146,6 +148,8 @@ export const predictNextSpeaker = async (
       participants,
       messageHistory,
       turnCount,
+      language_override: languageOverride,
+      host_name_override: hostNameOverride,
     }, 30000, { signal: abortSignal });
     return res.speakerId;
   } catch (e) {
@@ -167,7 +171,9 @@ export const generateTurnForSpeaker = async (
   maxTurns: number,
   isOpeningStatement: boolean = false,
   mentionedParticipantId?: string,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  languageOverride?: string,
+  hostNameOverride?: string,
 ): Promise<{ text: string; stance?: string; stanceIntensity?: number; shouldWaitForUser: boolean; actionDescription?: string }> => {
   try {
     return await apiCall('/api/generate_turn', {
@@ -179,6 +185,8 @@ export const generateTurnForSpeaker = async (
       maxTurns,
       isOpeningStatement,
       mentionedParticipantId,
+      language_override: languageOverride,
+      host_name_override: hostNameOverride,
     }, 45000, { signal: abortSignal });
   } catch (e) {
     console.error('API call failed: generate_turn:', e);

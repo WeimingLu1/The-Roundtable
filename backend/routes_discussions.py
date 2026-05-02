@@ -114,7 +114,7 @@ async def admin_get_discussion(discussion_id: str, admin: dict = Depends(require
     from backend.db import get_connection
     db = await get_connection()
     async with db.execute(
-        """SELECT d.*, u.name as user_name, u.email as user_email
+        """SELECT d.*, u.name as user_name, u.email as user_email, u.language as user_language
            FROM discussions d JOIN users u ON d.user_id = u.id
            WHERE d.id = ?""",
         (discussion_id,)

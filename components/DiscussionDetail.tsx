@@ -54,6 +54,10 @@ export function DiscussionDetail({ id, adminMode = false }: Props) {
     if (!isContinuing || isTyping || thinkingSpeakerId || turnInProgressRef.current || isWaitingForUser) return;
     if (!participants.length || !discussion) return;
 
+    // Admin ghost mode: use discussion owner's language and name
+    const overrideLang = effectiveAdminMode ? (discussion as any).user_language : undefined;
+    const overrideName = effectiveAdminMode ? (discussion as any).user_name : undefined;
+
     const runTurn = async () => {
       if (!discussion) return;
       turnInProgressRef.current = true;
@@ -61,14 +65,18 @@ export function DiscussionDetail({ id, adminMode = false }: Props) {
       try {
         const nextSpeakerId = await predictNextSpeaker(
           discussion.topic, participants, messages, autoDebateCount,
-          abortControllerRef.current?.signal
+          abortControllerRef.current?.signal,
+          overrideLang,
+          overrideName,
         );
         setThinkingSpeakerId(nextSpeakerId);
 
         const result = await generateTurnForSpeaker(
           nextSpeakerId, discussion.topic, participants, messages,
           autoDebateCount, currentRoundLimit, false, undefined,
-          abortControllerRef.current?.signal
+          abortControllerRef.current?.signal,
+          overrideLang,
+          overrideName,
         );
 
         const newMessage: Message = {

@@ -137,6 +137,8 @@ class PredictNextSpeakerRequest(BaseModel):
     participants: List[Participant]
     messageHistory: List[Message]
     turnCount: int
+    language_override: Optional[str] = None  # admin ghost mode: use discussion owner's language
+    host_name_override: Optional[str] = None  # admin ghost mode: use discussion owner's name
 
 
 class GenerateTurnRequest(BaseModel):
@@ -147,6 +149,8 @@ class GenerateTurnRequest(BaseModel):
     turnCount: int
     maxTurns: int
     isOpeningStatement: bool = False
+    language_override: Optional[str] = None
+    host_name_override: Optional[str] = None
     mentionedParticipantId: Optional[str] = None  # If @someone was used, their ID
 
 
@@ -604,15 +608,18 @@ async def generate_turn(req: GenerateTurnRequest, user: dict = Depends(get_curre
     speaker_name = speaker.name
     valid_names_list = ", ".join([p.name for p in req.participants])
 
+    # Admin ghost mode: use discussion owner's language/name instead of admin's own
+    language = req.language_override or user.get("language", "Chinese")
+    host_name = req.host_name_override or user["name"]
+
     if req.isOpeningStatement:
-        lang = user.get("language", "Chinese")
         prompt = f"""
 Role: You are {speaker_name}, {speaker.title}.
 Core Stance: {speaker.stance}.
 Topic: "{req.topic}"
 
 Task: State your core argument clearly and naturally.
-- You MUST speak in {lang}. All output text must be in {lang}.
+- You MUST speak in {language}. All output text must be in {language}.
 - SPEAK IN CHARACTER: Do NOT sound like a generic AI. Your speech must reflect YOUR specific background and personality. If you are an entertainer, speak with emotional intuition and cultural references. If you are a scientist, speak with analytical precision. If you are an activist, speak with passion. Let your real persona shine through.
 - Vary your opening style: be provocative, personal, or storytelling -- not all openings should sound the same.
 - Be direct but polite.
@@ -621,8 +628,8 @@ Task: State your core argument clearly and naturally.
 - ABSOLUTE PROHIBITION: Do NOT start with greetings like "Hello", "Hi everyone", "Good morning", "很高兴", "大家好", etc. Start directly with your substantive argument.
 
 **OUTPUT FORMAT**: "SPEECH|||ACTION_DESC"
-- SPEECH: your spoken opening statement in {lang}
-- ACTION_DESC: 1 vivid sentence in {lang} describing your body language/facial expression as you speak (third person)
+- SPEECH: your spoken opening statement in {language}
+- ACTION_DESC: 1 vivid sentence in {language} describing your body language/facial expression as you speak (third person)
 
 Example:
 "我认为这个问题的核心在于人性的本质。|||她微微前倾，双手交叠放在桌上，目光坚定而温和地扫过在场的每一个人"
@@ -670,7 +677,7 @@ Example:
 
     # Discussion turn
     recent_history = "\n\n".join([
-        f"{user["name"]} (HOST): {m.text}" if m.senderId == "user"
+        f"{host_name} (HOST): {m.text}" if m.senderId == "user"
         else f"{next((p.name for p in req.participants if p.id == m.senderId), 'Unknown')}: {m.text}"
         for m in req.messageHistory[-15:]
     ])
@@ -698,18 +705,18 @@ Example:
 
     # Override speaker selection if this speaker was @mentioned by host
     if mentioned_in_last_host_msg and req.speakerId == mentioned_in_last_host_msg.id:
-        directives = f"CRITICAL: The Host (@{user["name"]}) just @mentioned you ({mentioned_in_last_host_msg.name}) and asked: \"{last_message.text[:100]}...\"\nINSTRUCTION: You MUST directly answer the Host's specific question as {mentioned_in_last_host_msg.name}. Do NOT pivot to other experts. Do NOT give a generic statement. Address the question head-on."
+        directives = f"CRITICAL: The Host (@{host_name}) just @mentioned you ({mentioned_in_last_host_msg.name}) and asked: \"{last_message.text[:100]}...\"\nINSTRUCTION: You MUST directly answer the Host's specific question as {mentioned_in_last_host_msg.name}. Do NOT pivot to other experts. Do NOT give a generic statement. Address the question head-on."
     elif host_just_spoke:
-        directives = f"PRIORITY: The Host (@{user["name"]}) just spoke: \"{last_message.text}\". INSTRUCTION: Answer the Host directly. Do not pivot to others yet."
+        directives = f"PRIORITY: The Host (@{host_name}) just spoke: \"{last_message.text}\". INSTRUCTION: Answer the Host directly. Do not pivot to others yet."
     elif force_return_to_host:
-        directives = f"PRIORITY: This is the end of the current debate round. INSTRUCTION: You MUST cue the Host (@{user["name"]}) with a specific OPEN-ENDED QUESTION. 禁止: Do not cue other experts."
+        directives = f"PRIORITY: This is the end of the current debate round. INSTRUCTION: You MUST cue the Host (@{host_name}) with a specific OPEN-ENDED QUESTION. 禁止: Do not cue other experts."
     else:
-        directives = f"PRIORITY: Debate with your peers. You MAY naturally address the Host (@{user["name"]}) if you genuinely want their opinion or have a question for them. However, the debate should primarily flow between experts -- do NOT address the Host in every message."
+        directives = f"PRIORITY: Debate with your peers. You MAY naturally address the Host (@{host_name}) if you genuinely want their opinion or have a question for them. However, the debate should primarily flow between experts -- do NOT address the Host in every message."
 
     prompt = f"""
 Context: A high-quality, intellectual roundtable discussion (Salon).
 Topic: "{req.topic}"
-Host: {user["name"]}
+Host: {host_name}
 Valid Participants: {valid_names_list}
 
 CHARACTER CONTEXT:
@@ -724,7 +731,7 @@ Transcript (Recent Context):
 {directives}
 
 ADDITIONAL RULES:
-1. **LANGUAGE**: You MUST speak in {user.get("language", "Chinese")}. All output must be in {user.get("language", "Chinese")}.
+1. **LANGUAGE**: You MUST speak in {language}. All output must be in {language}.
 2. **INTELLECTUAL FLEXIBILITY**: Do NOT be stubbornly dogmatic. If a previous speaker makes a strong point that contradicts your view, you should ACKNOWLEDGE it.
 3. **STANCE & INTENSITY**: Decide your emotional/cognitive reaction. Choose from:
    [AGREE, DISAGREE, PARTIAL, PIVOT, NEUTRAL,
@@ -817,7 +824,7 @@ Full example outputs:
             stance = "NEUTRAL"
         intensity = max(1, min(5, intensity))
 
-        should_wait = "WAIT" in action.upper() or force_return_to_host or (re.search(r'\B@' + re.escape(user["name"]) + r'(?:\s|$|[^a-zA-Z0-9])', message, re.IGNORECASE) and "?" in message and req.turnCount > 0)
+        should_wait = "WAIT" in action.upper() or force_return_to_host or (re.search(r'\B@' + re.escape(host_name) + r'(?:\s|$|[^a-zA-Z0-9])', message, re.IGNORECASE) and "?" in message and req.turnCount > 0)
 
         # Sanitize action_description: discard if it looks like thinking/meta-commentary
         if action_description:
@@ -855,7 +862,7 @@ async def generate_summary(req: GenerateSummaryRequest, user: dict = Depends(get
         f"- {p.name} ({p.title}): Stance on topic = {p.stance}"
         for p in req.participants
     ] + [
-        f"- {user["name"]} (HOST): Identity = {user.get("identity", "")}. The Host is also a participant whose views should be summarized."
+        f"- {host_name} (HOST): Identity = {user.get("identity", "")}. The Host is also a participant whose views should be summarized."
     ])
 
     prompt = f"""You are producing the official minutes of a high-quality intellectual roundtable discussion. Your summary must be THOROUGH, DETAILED, and INSIGHTFUL — not a generic overview.
@@ -898,8 +905,8 @@ Return a JSON object with EXACTLY this structure:
 }}
 
 CRITICAL REQUIREMENTS:
-- "core_viewpoints" MUST have exactly {len(req.participants) + 1} entries (one per expert plus the Host "{user["name"]}"). The Host's viewpoint MUST be the LAST entry.
-- **HOST VIEWPOINT**: The Host ("{user["name"]}") is an active participant, not just a moderator. Carefully review ALL of the Host's messages in the transcript. Extract the Host's personal opinions, arguments, questions, and positions on the topic. The Host's entry MUST include: their actual stance/position on the topic (not "Moderating"), at least 3-4 specific key points they raised, and a memorable quote from their messages. If the Host expressed clear opinions, reflect them accurately.
+- "core_viewpoints" MUST have exactly {len(req.participants) + 1} entries (one per expert plus the Host "{host_name}"). The Host's viewpoint MUST be the LAST entry.
+- **HOST VIEWPOINT**: The Host ("{host_name}") is an active participant, not just a moderator. Carefully review ALL of the Host's messages in the transcript. Extract the Host's personal opinions, arguments, questions, and positions on the topic. The Host's entry MUST include: their actual stance/position on the topic (not "Moderating"), at least 3-4 specific key points they raised, and a memorable quote from their messages. If the Host expressed clear opinions, reflect them accurately.
 - "key_discussion_moments" MUST have at least 3 detailed entries. Each should describe a specific pivotal moment with context about who said what and why it was significant.
 - "questions" MUST have at least 3 open questions with detailed "why_unresolved" explanations.
 - "summary" must be substantive and detailed, not generic. Reference specific arguments by name.
