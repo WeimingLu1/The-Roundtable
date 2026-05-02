@@ -5,9 +5,11 @@ import json
 import logging
 import httpx
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from backend.db import init_db, close_db
+from backend.routes_auth import router as auth_router, get_current_user
 from typing import List, Optional, Literal
 from dotenv import load_dotenv
 
@@ -41,8 +43,10 @@ async def lifespan(app: FastAPI):
     # Startup: create HTTP client
     global _http_client
     _http_client = httpx.AsyncClient(timeout=120.0)
+    await init_db()
     yield
     # Shutdown: close HTTP client
+    await close_db()
     if _http_client:
         await _http_client.aclose()
         _http_client = None
@@ -56,6 +60,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(auth_router)
 
 async def get_http_client() -> httpx.AsyncClient:
     global _http_client
@@ -76,6 +82,14 @@ AVATAR_COLORS = [
     '#EF4444', '#F97316', '#F59E0B', '#10B981', '#06B6D4',
     '#3B82F6', '#6366F1', '#8B5CF6', '#EC4899', '#84CC16'
 ]
+
+
+def _make_user_context(user: dict):
+    return {
+        "nickname": user["name"],
+        "identity": user.get("identity", ""),
+        "language": user.get("language", "Chinese"),
+    }
 
 
 # --- Request/Response Models ---
@@ -103,25 +117,22 @@ class Participant(BaseModel):
 
 
 class GenerateRandomTopicRequest(BaseModel):
-    language: str
+    pass
 
 
 class GeneratePanelRequest(BaseModel):
     topic: str
-    userContext: UserContext
 
 
 class GenerateSingleParticipantRequest(BaseModel):
     inputQuery: str
     topic: str
-    userContext: UserContext
 
 
 class PredictNextSpeakerRequest(BaseModel):
     topic: str
     participants: List[Participant]
     messageHistory: List[Message]
-    userContext: UserContext
     turnCount: int
 
 
@@ -130,7 +141,6 @@ class GenerateTurnRequest(BaseModel):
     topic: str
     participants: List[Participant]
     messageHistory: List[Message]
-    userContext: UserContext
     turnCount: int
     maxTurns: int
     isOpeningStatement: bool = False
@@ -141,7 +151,6 @@ class GenerateSummaryRequest(BaseModel):
     topic: str
     messageHistory: List[Message]
     participants: List[Participant]
-    userContext: UserContext
 
 
 # --- Helper ---
@@ -274,8 +283,9 @@ async def get_ai_response(prompt: str, json_mode: bool = False, max_tokens: int 
 
 # --- Endpoints ---
 @app.post("/api/generate_random_topic")
-async def generate_random_topic(req: GenerateRandomTopicRequest):
-    lang_instruction = "in Chinese" if req.language.lower() == "chinese" else "in English" if req.language.lower() == "english" else f"in {req.language}"
+async def generate_random_topic(user: dict = Depends(get_current_user)):
+    lang = user.get("language", "Chinese")
+    lang_instruction = "in Chinese" if lang.lower() == "chinese" else "in English" if lang.lower() == "english" else f"in {lang}"
 
     # Pre-pick a random domain to force diversity — prevents model from defaulting to AI
     domains_en = [
@@ -290,7 +300,7 @@ async def generate_random_topic(req: GenerateRandomTopicRequest):
         "艺术", "体育", "食品与农业", "历史", "媒体与新闻",
         "家庭与关系", "宗教", "刑事司法"
     ]
-    is_chinese = req.language.lower() == "chinese"
+    is_chinese = lang.lower() == "chinese"
     domain = random.choice(domains_cn if is_chinese else domains_en)
 
     prompt = f"""Generate ONE debate topic {lang_instruction} in the domain of {domain}.
@@ -363,8 +373,8 @@ Respond with ONLY the topic text, no explanation, no labels."""
 
 
 @app.post("/api/generate_panel")
-async def generate_panel(req: GeneratePanelRequest):
-    lang_name = "Chinese" if req.userContext.language.lower() == "chinese" else req.userContext.language
+async def generate_panel(req: GeneratePanelRequest, user: dict = Depends(get_current_user)):
+    lang_name = "Chinese" if user.get("language", "Chinese").lower() == "chinese" else user.get("language", "Chinese")
     prompt = f"""Topic: {req.topic}
 Language: {lang_name}
 
@@ -407,7 +417,7 @@ Return JSON:
             {"name": "陈伟博士", "title": "人工智能伦理研究员", "stance": "关注人工智能对齐与安全问题。"},
             {"name": "马库斯·李教授", "title": "技术哲学家", "stance": "对人类与人工智能协作持乐观态度。"},
         ]
-        default_participants = default_chinese if req.userContext.language.lower() == "chinese" else default_english
+        default_participants = default_chinese if user.get("language", "Chinese").lower() == "chinese" else default_english
         while len(participants) < 3:
             participants.append(default_participants[len(participants) % len(default_participants)])
 
@@ -434,8 +444,8 @@ Return JSON:
 
 
 @app.post("/api/generate_single_participant")
-async def generate_single_participant(req: GenerateSingleParticipantRequest):
-    lang_name = "Chinese" if req.userContext.language.lower() == "chinese" else req.userContext.language
+async def generate_single_participant(req: GenerateSingleParticipantRequest, user: dict = Depends(get_current_user)):
+    lang_name = "Chinese" if user.get("language", "Chinese").lower() == "chinese" else user.get("language", "Chinese")
     prompt = f"""User Input: {req.inputQuery}
 Topic: {req.topic}
 Language: {lang_name}
@@ -504,7 +514,7 @@ Return ONLY valid JSON: {{"name":"?","title":"?","stance":"?"}}"""
 
 
 @app.post("/api/predict_next_speaker")
-async def predict_next_speaker(req: PredictNextSpeakerRequest):
+async def predict_next_speaker(req: PredictNextSpeakerRequest, user: dict = Depends(get_current_user)):
     # Guard against empty message history
     if not req.messageHistory:
         return {"speakerId": req.participants[0].id if req.participants else "user"}
@@ -583,7 +593,7 @@ Surprise the discussion occasionally by picking an unexpected speaker. Return ON
 
 
 @app.post("/api/generate_turn")
-async def generate_turn(req: GenerateTurnRequest):
+async def generate_turn(req: GenerateTurnRequest, user: dict = Depends(get_current_user)):
     # Validate speakerId exists
     speaker = next((p for p in req.participants if p.id == req.speakerId), None)
     if not speaker:
@@ -592,7 +602,7 @@ async def generate_turn(req: GenerateTurnRequest):
     valid_names_list = ", ".join([p.name for p in req.participants])
 
     if req.isOpeningStatement:
-        lang = req.userContext.language
+        lang = user.get("language", "Chinese")
         prompt = f"""
 Role: You are {speaker_name}, {speaker.title}.
 Core Stance: {speaker.stance}.
@@ -657,7 +667,7 @@ Example:
 
     # Discussion turn
     recent_history = "\n\n".join([
-        f"{req.userContext.nickname} (HOST): {m.text}" if m.senderId == "user"
+        f"{user["name"]} (HOST): {m.text}" if m.senderId == "user"
         else f"{next((p.name for p in req.participants if p.id == m.senderId), 'Unknown')}: {m.text}"
         for m in req.messageHistory[-15:]
     ])
@@ -685,18 +695,18 @@ Example:
 
     # Override speaker selection if this speaker was @mentioned by host
     if mentioned_in_last_host_msg and req.speakerId == mentioned_in_last_host_msg.id:
-        directives = f"CRITICAL: The Host (@{req.userContext.nickname}) just @mentioned you ({mentioned_in_last_host_msg.name}) and asked: \"{last_message.text[:100]}...\"\nINSTRUCTION: You MUST directly answer the Host's specific question as {mentioned_in_last_host_msg.name}. Do NOT pivot to other experts. Do NOT give a generic statement. Address the question head-on."
+        directives = f"CRITICAL: The Host (@{user["name"]}) just @mentioned you ({mentioned_in_last_host_msg.name}) and asked: \"{last_message.text[:100]}...\"\nINSTRUCTION: You MUST directly answer the Host's specific question as {mentioned_in_last_host_msg.name}. Do NOT pivot to other experts. Do NOT give a generic statement. Address the question head-on."
     elif host_just_spoke:
-        directives = f"PRIORITY: The Host (@{req.userContext.nickname}) just spoke: \"{last_message.text}\". INSTRUCTION: Answer the Host directly. Do not pivot to others yet."
+        directives = f"PRIORITY: The Host (@{user["name"]}) just spoke: \"{last_message.text}\". INSTRUCTION: Answer the Host directly. Do not pivot to others yet."
     elif force_return_to_host:
-        directives = f"PRIORITY: This is the end of the current debate round. INSTRUCTION: You MUST cue the Host (@{req.userContext.nickname}) with a specific OPEN-ENDED QUESTION. 禁止: Do not cue other experts."
+        directives = f"PRIORITY: This is the end of the current debate round. INSTRUCTION: You MUST cue the Host (@{user["name"]}) with a specific OPEN-ENDED QUESTION. 禁止: Do not cue other experts."
     else:
-        directives = f"PRIORITY: Debate with your peers. You MAY naturally address the Host (@{req.userContext.nickname}) if you genuinely want their opinion or have a question for them. However, the debate should primarily flow between experts -- do NOT address the Host in every message."
+        directives = f"PRIORITY: Debate with your peers. You MAY naturally address the Host (@{user["name"]}) if you genuinely want their opinion or have a question for them. However, the debate should primarily flow between experts -- do NOT address the Host in every message."
 
     prompt = f"""
 Context: A high-quality, intellectual roundtable discussion (Salon).
 Topic: "{req.topic}"
-Host: {req.userContext.nickname}
+Host: {user["name"]}
 Valid Participants: {valid_names_list}
 
 CHARACTER CONTEXT:
@@ -711,7 +721,7 @@ Transcript (Recent Context):
 {directives}
 
 ADDITIONAL RULES:
-1. **LANGUAGE**: You MUST speak in {req.userContext.language}. All output must be in {req.userContext.language}.
+1. **LANGUAGE**: You MUST speak in {user.get("language", "Chinese")}. All output must be in {user.get("language", "Chinese")}.
 2. **INTELLECTUAL FLEXIBILITY**: Do NOT be stubbornly dogmatic. If a previous speaker makes a strong point that contradicts your view, you should ACKNOWLEDGE it.
 3. **STANCE & INTENSITY**: Decide your emotional/cognitive reaction. Choose from:
    [AGREE, DISAGREE, PARTIAL, PIVOT, NEUTRAL,
@@ -804,7 +814,7 @@ Full example outputs:
             stance = "NEUTRAL"
         intensity = max(1, min(5, intensity))
 
-        should_wait = "WAIT" in action.upper() or force_return_to_host or (re.search(r'\B@' + re.escape(req.userContext.nickname) + r'(?:\s|$|[^a-zA-Z0-9])', message, re.IGNORECASE) and "?" in message and req.turnCount > 0)
+        should_wait = "WAIT" in action.upper() or force_return_to_host or (re.search(r'\B@' + re.escape(user["name"]) + r'(?:\s|$|[^a-zA-Z0-9])', message, re.IGNORECASE) and "?" in message and req.turnCount > 0)
 
         # Sanitize action_description: discard if it looks like thinking/meta-commentary
         if action_description:
@@ -831,7 +841,7 @@ Full example outputs:
 
 
 @app.post("/api/generate_summary")
-async def generate_summary(req: GenerateSummaryRequest):
+async def generate_summary(req: GenerateSummaryRequest, user: dict = Depends(get_current_user)):
     transcript = "\n".join([
         f"{'HOST' if m.senderId == 'user' else next((p.name for p in req.participants if p.id == m.senderId), 'Unknown')}: {m.text}"
         for m in req.messageHistory
@@ -842,7 +852,7 @@ async def generate_summary(req: GenerateSummaryRequest):
         f"- {p.name} ({p.title}): Stance on topic = {p.stance}"
         for p in req.participants
     ] + [
-        f"- {req.userContext.nickname} (HOST): Identity = {req.userContext.identity}. The Host is also a participant whose views should be summarized."
+        f"- {user["name"]} (HOST): Identity = {user.get("identity", "")}. The Host is also a participant whose views should be summarized."
     ])
 
     prompt = f"""You are producing the official minutes of a high-quality intellectual roundtable discussion. Your summary must be THOROUGH, DETAILED, and INSIGHTFUL — not a generic overview.
@@ -852,12 +862,12 @@ Topic: {req.topic}
 Participants:
 {participant_context}
 
-Language: {req.userContext.language}
+Language: {user.get("language", "Chinese")}
 
 Transcript (full discussion):
 {transcript}
 
-Your task: Write a comprehensive, detailed summary in {req.userContext.language}.
+Your task: Write a comprehensive, detailed summary in {user.get("language", "Chinese")}.
 
 Return a JSON object with EXACTLY this structure:
 {{
@@ -885,8 +895,8 @@ Return a JSON object with EXACTLY this structure:
 }}
 
 CRITICAL REQUIREMENTS:
-- "core_viewpoints" MUST have exactly {len(req.participants) + 1} entries (one per expert plus the Host "{req.userContext.nickname}"). The Host's viewpoint MUST be the LAST entry.
-- **HOST VIEWPOINT**: The Host ("{req.userContext.nickname}") is an active participant, not just a moderator. Carefully review ALL of the Host's messages in the transcript. Extract the Host's personal opinions, arguments, questions, and positions on the topic. The Host's entry MUST include: their actual stance/position on the topic (not "Moderating"), at least 3-4 specific key points they raised, and a memorable quote from their messages. If the Host expressed clear opinions, reflect them accurately.
+- "core_viewpoints" MUST have exactly {len(req.participants) + 1} entries (one per expert plus the Host "{user["name"]}"). The Host's viewpoint MUST be the LAST entry.
+- **HOST VIEWPOINT**: The Host ("{user["name"]}") is an active participant, not just a moderator. Carefully review ALL of the Host's messages in the transcript. Extract the Host's personal opinions, arguments, questions, and positions on the topic. The Host's entry MUST include: their actual stance/position on the topic (not "Moderating"), at least 3-4 specific key points they raised, and a memorable quote from their messages. If the Host expressed clear opinions, reflect them accurately.
 - "key_discussion_moments" MUST have at least 3 detailed entries. Each should describe a specific pivotal moment with context about who said what and why it was significant.
 - "questions" MUST have at least 3 open questions with detailed "why_unresolved" explanations.
 - "summary" must be substantive and detailed, not generic. Reference specific arguments by name.
@@ -951,11 +961,11 @@ CRITICAL REQUIREMENTS:
                         "most_memorable_quote": ""
                     })
             # If host is missing, add host viewpoint
-            host_name = req.userContext.nickname
+            host_name = user["name"]
             if host_name not in existing_speakers:
                 data["core_viewpoints"].append({
                     "speaker": host_name,
-                    "title": f"Host ({req.userContext.identity})",
+                    "title": f"Host ({user.get("identity", "")})",
                     "stance": "Participated actively in the discussion",
                     "key_points": [],
                     "most_memorable_quote": ""
