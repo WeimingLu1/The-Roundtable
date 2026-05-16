@@ -30,6 +30,7 @@ export function DiscussionDetail({ id, adminMode = false }: Props) {
   const [currentRoundLimit, setCurrentRoundLimit] = useState(3);
   const turnInProgressRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const mentionedParticipantIdRef = useRef<string | undefined>(undefined);
 
   // Auto-detect admin mode: admins use admin APIs to bypass ownership checks
   const effectiveAdminMode = adminMode || (user?.is_admin === true);
@@ -73,7 +74,7 @@ export function DiscussionDetail({ id, adminMode = false }: Props) {
 
         const result = await generateTurnForSpeaker(
           nextSpeakerId, discussion.topic, participants, messages,
-          autoDebateCount, currentRoundLimit, false, undefined,
+          autoDebateCount, currentRoundLimit, false, mentionedParticipantIdRef.current,
           abortControllerRef.current?.signal,
           overrideLang,
           overrideName,
@@ -128,6 +129,19 @@ export function DiscussionDetail({ id, adminMode = false }: Props) {
     saver(id, [userMsg]).catch(console.error);
 
     setIsWaitingForUser(false);
+
+    // Extract @mentioned participant from text and store for generate_turn call
+    let mentionedId: string | undefined;
+    for (const p of participants) {
+      const escapedName = p.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const mentionPattern = new RegExp(`@${escapedName}($|\\s|[^a-zA-Z0-9])`, 'i');
+      if (mentionPattern.test(text)) {
+        mentionedId = p.id;
+        break;
+      }
+    }
+    mentionedParticipantIdRef.current = mentionedId;
+
     setAutoDebateCount(0);
     setCurrentRoundLimit(Math.floor(Math.random() * 5) + 1);
   };

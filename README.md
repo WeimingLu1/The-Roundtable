@@ -52,7 +52,7 @@ AI generates a detailed JSON report:
 - Synthesis conclusion
 
 ### 8. History
-All discussions are automatically saved to SQLite. Browse past discussions, view full transcripts, and continue any discussion from where it left off. Admin can access all users' discussions.
+All discussions are automatically saved to SQLite. Browse past discussions, view full transcripts, and continue any discussion from where it left off — with full `@mention` support to direct the AI to specific guests. Admin can access all users' discussions.
 
 ### 9. Admin Panel
 User management (CRUD), admin/superuser controls, and full visibility into all platform discussions. Admins can ghost into any user's discussion to continue on their behalf.

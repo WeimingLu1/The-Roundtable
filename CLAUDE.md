@@ -180,3 +180,4 @@ VITE_GITHUB_CLIENT_ID=xxx
 - First registered user is automatically admin
 - Admin can ghost into any user's discussion (language/name overrides preserve original context)
 - Discussion messages auto-save each turn; summaries auto-save on generation
+- `@mention` detection works in both main discussion (App.tsx) and continue-from-history (DiscussionDetail.tsx) — host can force the next speaker by name in either flow
